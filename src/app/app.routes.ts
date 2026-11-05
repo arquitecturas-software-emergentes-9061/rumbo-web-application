@@ -30,6 +30,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'planning/sites',
+    loadComponent: () => import('./features/planning/pages/sites-management/sites-management.component')
+      .then(module => module.SitesManagementComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }
