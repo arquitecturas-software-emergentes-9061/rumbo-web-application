@@ -3,24 +3,23 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ValidatorFn, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { EMPTY, Observable, Subject, catchError, finalize, forkJoin, of, switchMap } from 'rxjs';
-import { AuthService } from '../../../../core/services/auth.service';
+import { Observable, Subject, catchError, finalize, forkJoin, of, switchMap } from 'rxjs';
 import { SitesService } from '../../../../core/services/sites.service';
 import { ClinicOrganization, Floor, Site } from '../../../../core/models/site-floor.model';
+import { AdminShellComponent } from '../../../../shared/admin-shell/admin-shell.component';
 
 const trimmedLength = (minimum: number): ValidatorFn => control =>
   typeof control.value === 'string' && control.value.trim().length >= minimum ? null : { required: true };
 
 @Component({
   selector: 'app-sites-management',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AdminShellComponent],
   templateUrl: './sites-management.component.html',
   styleUrl: './sites-management.component.css'
 })
 export class SitesManagementComponent implements OnInit {
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly service = inject(SitesService);
-  private readonly auth = inject(AuthService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly floorSelection = new Subject<string | null>();
 
@@ -163,10 +162,6 @@ export class SitesManagementComponent implements OnInit {
       this.floors.update(floors => [...floors, floor].sort((first, second) => first.number - second.number));
       this.success.set('Piso registrado.');
     });
-  }
-
-  logout(): void {
-    this.auth.signOut().pipe(catchError(() => EMPTY), takeUntilDestroyed(this.destroyRef)).subscribe();
   }
 
   private open(editor: 'clinic' | 'site' | 'floor'): void {

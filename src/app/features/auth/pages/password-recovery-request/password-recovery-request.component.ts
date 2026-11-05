@@ -1,3 +1,4 @@
+import { AuthLayoutComponent } from '../../../../shared/auth-layout/auth-layout.component';
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -8,9 +9,8 @@ import { PasswordRecoveryService } from '../../../../core/services/password-reco
 @Component({
   selector: 'app-password-recovery-request',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
-  templateUrl: './password-recovery-request.component.html',
-  styleUrl: './password-recovery-request.component.css'
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, AuthLayoutComponent],
+  templateUrl: './password-recovery-request.component.html'
 })
 export class PasswordRecoveryRequestComponent {
   private readonly fb = inject(FormBuilder);

@@ -1,16 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import './app/shared/auth-layout/auth-forms.css';
 
 :root {
-  --primary: #3658E8;
-  --primary-soft: #EEF1FF;
-  --ink: #152033;
-  --muted: #6D788C;
-  --line: #E4E8F0;
-  --panel: #FFFFFF;
-  --background: #F5F7FB;
-  --sidebar: #0B1020;
-  --error: #DC2626;
-  --error-bg: #FEE2E2;
+  --primary: #096a99;
+  --primary-hover: #075377;
+  --primary-action: linear-gradient(110deg, #086d9f, #007b70);
+  --primary-soft: #ebf3f8;
+  --ink: #142e44;
+  --muted: #506a80;
+  --line: #dbe5ef;
+  --control-line: #9aafc0;
+  --panel: #fff;
+  --background: #f3f7fa;
+  --sidebar: #112f48;
+  --sidebar-active: #21536c;
+  --sidebar-text: #d8e8f3;
+  --error: #9f2629;
+  --error-bg: #fff0ef;
+  --warning: #654516;
+  --warning-bg: #fff6e6;
+  --success: #1b5a46;
+  --success-bg: #e9f6ef;
+  --control-radius: 4px;
+  --panel-radius: 6px;
+  --page-gutter: 24px;
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -30,4 +43,39 @@ body {
 
 button, input, select, textarea {
   font-family: inherit;
+}
+
+:where(a, button, input):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+::selection {
+  color: var(--ink);
+  background: #c7e5ed;
+}
+
+.page-heading {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.page-heading h1 {
+  margin: 0;
+  font-size: 1.9rem;
+  line-height: 1.15;
+  letter-spacing: -.025em;
+}
+
+.page-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  :root { --page-gutter: 16px; }
+  .page-heading h1 { font-size: 1.55rem; }
 }

@@ -1,3 +1,4 @@
+import { AuthLayoutComponent } from '../../../../shared/auth-layout/auth-layout.component';
 import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AbstractControl, FormBuilder, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
@@ -19,9 +20,8 @@ export const passwordMatchValidator: ValidatorFn = (control: AbstractControl): V
 @Component({
   selector: 'app-password-reset-confirm',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
-  templateUrl: './password-reset-confirm.component.html',
-  styleUrl: './password-reset-confirm.component.css'
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, AuthLayoutComponent],
+  templateUrl: './password-reset-confirm.component.html'
 })
 export class PasswordResetConfirmComponent implements OnInit {
   private readonly fb = inject(FormBuilder);

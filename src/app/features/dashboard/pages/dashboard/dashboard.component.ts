@@ -1,19 +1,12 @@
-import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
-import { AuthService } from '../../../../core/services/auth.service';
+import { Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { AdminShellComponent } from '../../../../shared/admin-shell/admin-shell.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [RouterLink, AdminShellComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css'
 })
-export class DashboardComponent {
-  readonly authService = inject(AuthService);
-
-  onSignOut(): void {
-    this.authService.signOut().subscribe({ error: () => { /* Login explains unconfirmed remote revocation. */ } });
-  }
-}
+export class DashboardComponent {}

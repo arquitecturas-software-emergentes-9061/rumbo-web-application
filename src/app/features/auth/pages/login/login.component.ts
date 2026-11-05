@@ -1,3 +1,4 @@
+import { AuthLayoutComponent } from '../../../../shared/auth-layout/auth-layout.component';
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -9,9 +10,8 @@ import { ProblemDetail } from '../../../../core/models/auth.model';
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
-  templateUrl: './login.component.html',
-  styleUrl: './login.component.css'
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, AuthLayoutComponent],
+  templateUrl: './login.component.html'
 })
 export class LoginComponent {
   private readonly fb = inject(FormBuilder);
@@ -26,6 +26,7 @@ export class LoginComponent {
 
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
+  readonly loginErrorKind = signal<'credentials' | 'locked' | null>(null);
   readonly showPassword = signal(false);
   get sessionNotice(): string | null {
     const reason = this.route.snapshot.queryParams['reason'];
@@ -47,6 +48,7 @@ export class LoginComponent {
 
     this.isLoading.set(true);
     this.errorMessage.set(null);
+    this.loginErrorKind.set(null);
 
     const { email, password } = this.loginForm.value;
 
@@ -60,6 +62,9 @@ export class LoginComponent {
       },
       error: (error: HttpErrorResponse) => {
         this.isLoading.set(false);
+        const code = (error.error as ProblemDetail | undefined)?.code;
+        if (error.status === 423 || code === 'ACCOUNT_LOCKED') this.loginErrorKind.set('locked');
+        else if (code === 'INVALID_CREDENTIALS' || error.status === 401) this.loginErrorKind.set('credentials');
         this.errorMessage.set(this.resolveErrorMessage(error));
       }
     });
