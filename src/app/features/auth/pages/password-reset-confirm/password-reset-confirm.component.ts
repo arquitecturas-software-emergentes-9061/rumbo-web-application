@@ -11,7 +11,6 @@ export const passwordMatchValidator: ValidatorFn = (control: AbstractControl): V
   const confirmPassword = control.get('confirmPassword');
 
   if (password && confirmPassword && password.value !== confirmPassword.value) {
-    confirmPassword.setErrors({ passwordMismatch: true });
     return { passwordMismatch: true };
   }
   return null;
@@ -139,7 +138,7 @@ export class PasswordResetConfirmComponent implements OnInit {
 
     const problem: ProblemDetail = error.error;
     if (problem) {
-      if (problem.code === 'INVALID_PASSWORD_RESET_TOKEN' || error.status === 400) {
+      if (problem.code === 'INVALID_PASSWORD_RESET_TOKEN') {
         this.isTokenInvalid.set(true);
         this.errorMessage.set('El enlace de recuperación es inválido o ha expirado. Por favor solicite uno nuevo.');
         return;

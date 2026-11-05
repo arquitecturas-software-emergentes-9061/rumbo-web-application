@@ -80,7 +80,7 @@ describe('PasswordResetConfirmComponent', () => {
     component.resetForm.get('confirmPassword')?.setValue('DifferentPassword2026');
 
     expect(component.passwordsMatch).toBe(false);
-    expect(component.confirmPasswordControl?.hasError('passwordMismatch')).toBe(true);
+    expect(component.resetForm.hasError('passwordMismatch')).toBe(true);
 
     component.resetForm.get('confirmPassword')?.setValue('ValidPassword2026');
     expect(component.passwordsMatch).toBe(true);
@@ -97,6 +97,30 @@ describe('PasswordResetConfirmComponent', () => {
     expect(component.showConfirmPassword()).toBe(false);
     component.toggleConfirmPassword();
     expect(component.showConfirmPassword()).toBe(true);
+  });
+
+  it('unblocks submission when only the first password is corrected to match confirmation', async () => {
+    await createComponentWithToken('test-token');
+    component.resetForm.setValue({ newPassword: 'Password123', confirmPassword: 'Otherpass123' });
+    expect(component.resetForm.invalid).toBe(true);
+    component.resetForm.get('newPassword')!.setValue('Otherpass123');
+    fixture.detectChanges();
+    expect(component.resetForm.valid).toBe(true);
+    expect(fixture.nativeElement.querySelector('button[type="submit"]').disabled).toBe(false);
+    recoveryServiceSpy.confirmPasswordReset.mockReturnValue(of(undefined));
+    component.onSubmit();
+    expect(recoveryServiceSpy.confirmPasswordReset).toHaveBeenCalledWith('test-token', 'Otherpass123');
+  });
+
+  it('does not mark a weak password response as an expired token', async () => {
+    await createComponentWithToken('test-token');
+    recoveryServiceSpy.confirmPasswordReset.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 400, error: { code: 'WEAK_PASSWORD', detail: 'Password policy' }
+    })));
+    component.resetForm.setValue({ newPassword: 'Password123', confirmPassword: 'Password123' });
+    component.onSubmit();
+    expect(component.isTokenInvalid()).toBe(false);
+    expect(component.errorMessage()).toContain('requisitos de seguridad');
   });
 
   it('should submit new password and transition to success state on 204 response', async () => {

@@ -27,12 +27,19 @@ export class LoginComponent {
   readonly isLoading = signal(false);
   readonly errorMessage = signal<string | null>(null);
   readonly showPassword = signal(false);
+  get sessionNotice(): string | null {
+    const reason = this.route.snapshot.queryParams['reason'];
+    if (reason === 'session-expired') return 'Tu sesión venció. Inicia sesión de nuevo.';
+    if (reason === 'sign-out-unconfirmed') return 'Cerraste la sesión en este navegador. El servidor no confirmó la revocación.';
+    return null;
+  }
 
   togglePasswordVisibility(): void {
     this.showPassword.update((val) => !val);
   }
 
   onSubmit(): void {
+    if (this.isLoading()) return;
     if (this.loginForm.invalid) {
       this.loginForm.markAllAsTouched();
       return;
@@ -46,7 +53,9 @@ export class LoginComponent {
     this.authService.signIn({ email, password }).subscribe({
       next: (response) => {
         this.isLoading.set(false);
-        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/admin';
+        const requested = this.route.snapshot.queryParams['returnUrl'];
+        const returnUrl = typeof requested === 'string' && /^\/(admin|planning)(\/|\?|$)/.test(requested)
+          ? requested : '/admin';
         this.router.navigateByUrl(returnUrl);
       },
       error: (error: HttpErrorResponse) => {
@@ -71,6 +80,9 @@ export class LoginComponent {
 
     const problem: ProblemDetail = error.error;
     if (problem) {
+      if (problem.code === 'ADMIN_ACCESS_REQUIRED') {
+        return 'Esta cuenta no tiene acceso administrativo a Rumbo.';
+      }
       if (problem.code === 'INVALID_CREDENTIALS' || error.status === 401) {
         return 'Credenciales inválidas. Verifique su correo electrónico y contraseña.';
       }

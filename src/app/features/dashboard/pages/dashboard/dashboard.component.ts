@@ -14,6 +14,6 @@ export class DashboardComponent {
   readonly authService = inject(AuthService);
 
   onSignOut(): void {
-    this.authService.signOut().subscribe();
+    this.authService.signOut().subscribe({ error: () => { /* Login explains unconfirmed remote revocation. */ } });
   }
 }

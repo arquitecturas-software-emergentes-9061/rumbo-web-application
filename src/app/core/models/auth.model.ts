@@ -30,4 +30,14 @@ export interface AuthSession {
   clinicId: string | null;
   accessToken: string;
   refreshToken: string;
+  accessExpiresAt: number;
+  refreshTokenExpiresAt: string;
+}
+
+export interface UserAccountResponse {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  clinicId: string | null;
 }

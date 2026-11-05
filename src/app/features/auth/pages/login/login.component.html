@@ -13,6 +13,9 @@
       <p class="brand-subtitle">Panel de Administración de Clínicas</p>
     </div>
 
+    @if (sessionNotice; as notice) {
+      <p role="status">{{ notice }}</p>
+    }
     @if (errorMessage()) {
       <div class="alert alert-error" role="alert" aria-live="assertive">
         <svg class="alert-icon" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">

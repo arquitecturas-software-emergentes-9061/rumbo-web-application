@@ -1,55 +1,26 @@
 import { TestBed } from '@angular/core/testing';
-import { Router, ActivatedRouteSnapshot, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { firstValueFrom, Observable, of } from 'rxjs';
 import { authGuard, publicGuard } from './auth.guard';
 import { AuthService } from '../services/auth.service';
 
-describe('AuthGuard', () => {
-  let authServiceSpy: { isAuthenticated: ReturnType<typeof vi.fn> };
-  let router: Router;
-
-  beforeEach(() => {
-    authServiceSpy = { isAuthenticated: vi.fn() };
-
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: AuthService, useValue: authServiceSpy }
-      ]
-    });
-
-    router = TestBed.inject(Router);
+describe('IAM guards', () => {
+  const auth = { validateSession: vi.fn() };
+  beforeEach(() => TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: auth }] }));
+  it('awaits the backend validation before allowing an admin route', async () => {
+    auth.validateSession.mockReturnValue(of(true));
+    const result = TestBed.runInInjectionContext(() => authGuard({} as ActivatedRouteSnapshot, { url: '/planning/sites' } as RouterStateSnapshot));
+    expect(await firstValueFrom(result as Observable<boolean>)).toBe(true);
+    expect(auth.validateSession).toHaveBeenCalled();
   });
-
-  it('should allow access when user is authenticated', () => {
-    authServiceSpy.isAuthenticated.mockReturnValue(true);
-
-    const result = TestBed.runInInjectionContext(() =>
-      authGuard({} as ActivatedRouteSnapshot, { url: '/admin' } as RouterStateSnapshot)
-    );
-
-    expect(result).toBe(true);
+  it('redirects rejected sessions to login preserving the internal destination', async () => {
+    auth.validateSession.mockReturnValue(of(false));
+    const result = TestBed.runInInjectionContext(() => authGuard({} as ActivatedRouteSnapshot, { url: '/planning/sites' } as RouterStateSnapshot));
+    expect((await firstValueFrom(result as Observable<UrlTree>)).toString()).toContain('/login?returnUrl=%2Fplanning%2Fsites');
   });
-
-  it('should redirect unauthenticated users to /login with returnUrl', () => {
-    authServiceSpy.isAuthenticated.mockReturnValue(false);
-
-    const result = TestBed.runInInjectionContext(() =>
-      authGuard({} as ActivatedRouteSnapshot, { url: '/admin' } as RouterStateSnapshot)
-    );
-
-    expect(result instanceof UrlTree).toBe(true);
-    const tree = result as UrlTree;
-    expect(tree.toString()).toContain('/login?returnUrl=%2Fadmin');
-  });
-
-  it('publicGuard should redirect authenticated users away from /login to /admin', () => {
-    authServiceSpy.isAuthenticated.mockReturnValue(true);
-
-    const result = TestBed.runInInjectionContext(() =>
-      publicGuard({} as ActivatedRouteSnapshot, { url: '/login' } as RouterStateSnapshot)
-    );
-
-    expect(result instanceof UrlTree).toBe(true);
-    const tree = result as UrlTree;
-    expect(tree.toString()).toContain('/admin');
+  it('redirects a verified session from login to admin', async () => {
+    auth.validateSession.mockReturnValue(of(true));
+    const result = TestBed.runInInjectionContext(() => publicGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot));
+    expect((await firstValueFrom(result as Observable<UrlTree>)).toString()).toBe('/admin');
   });
 });
