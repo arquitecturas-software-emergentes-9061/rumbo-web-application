@@ -1,0 +1,49 @@
+:host { display: block; color: #17324a; background: #f3f7fa; min-height: 100vh; }
+.workspace { display: grid; grid-template-columns: minmax(190px, 20%) minmax(0, 1fr); min-height: 100vh; }
+.sidebar { display: flex; flex-direction: column; gap: 22px; padding: 20px 14px; background: #112f48; color: white; }
+.brand { color: white; text-decoration: none; font-weight: 800; letter-spacing: .08em; padding: 0 8px; }
+.brand small { color: #a4bfcd; font-size: .65em; }
+.sidebar nav { display: grid; gap: 6px; }
+.sidebar nav a { color: #d9e7f0; padding: 10px 12px; text-decoration: none; border-radius: 4px; }
+.sidebar nav a[aria-current] { background: #21536c; color: white; }
+.sign-out { margin-top: auto; color: white; border: 1px solid #7799ae; }
+.topbar { display: flex; justify-content: space-between; gap: 10px; background: white; border-bottom: 1px solid #dce6ef; padding: 16px 24px; }
+main { padding: 22px 24px 32px; }
+h1 { font-size: clamp(1.35rem, 3vw, 1.9rem); margin: 4px 0 20px; }
+h2 { font-size: 1.06rem; margin: 0 0 6px; }
+p { margin: 6px 0 10px; overflow-wrap: anywhere; }
+.breadcrumb, small { font-size: .8rem; color: #506b80; }
+.columns { display: grid; grid-template-columns: minmax(210px, 31%) minmax(0, 1fr); gap: 20px; align-items: start; }
+.details { display: grid; gap: 16px; }
+.card { background: white; border: 1px solid #dce6ef; border-radius: 5px; padding: 16px; min-width: 0; }
+.structure h2, .heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
+.clinic-name { padding: 9px; background: #edf4f9; font-weight: 700; }
+.tree, .tree ul { list-style: none; margin: 0; padding: 0 0 0 10px; border-left: 1px solid #d6e4ef; }
+.tree { margin: 8px 0 16px; }
+.tree li { padding: 3px 0; overflow-wrap: anywhere; }
+.tree ul li { padding: 6px 8px; }
+.tree-site { width: 100%; text-align: left; }
+.tree-site[aria-pressed="true"] { background: #edf4f9; border-color: #a8bfd1; }
+.structure > button { width: 100%; margin-top: 8px; }
+form { display: grid; gap: 12px; margin-top: 12px; }
+label { display: grid; gap: 6px; font-size: .86rem; font-weight: 650; }
+input { min-width: 0; width: 100%; box-sizing: border-box; color: inherit; padding: 9px; border: 1px solid #afc3d3; border-radius: 3px; font: inherit; font-weight: 400; }
+input.ng-touched.ng-invalid { border-color: #a84934; }
+button { font: inherit; color: inherit; cursor: pointer; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 8px 10px; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #126f9e; outline-offset: 2px; }
+.outline { border-color: #7891a6; }
+.primary { color: white; background: linear-gradient(110deg, #0b70a5, #007c73); font-weight: 650; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.alert, .success { border: 1px solid #d3b99a; background: #fff4e5; color: #62421f; padding: 8px 10px; }
+.success { border-color: #accfc3; background: #e8f7f0; color: #164b37; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .87rem; }
+th, td { padding: 9px; text-align: left; border-bottom: 1px solid #e1eaf1; overflow-wrap: anywhere; }
+thead { background: #edf4f9; }
+@media (max-width: 800px) {
+  .workspace, .columns { grid-template-columns: 1fr; }
+  .sidebar { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .sidebar nav { display: flex; flex-wrap: wrap; }
+  .sign-out { margin: 0 0 0 auto; }
+  main, .topbar { padding-left: 12px; padding-right: 12px; }
+}
