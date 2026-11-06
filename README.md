@@ -12,6 +12,19 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
+## Inventario de balizas BLE
+
+En **Balizas**, selecciona una sede y filtra el inventario por piso, identificador
+o estado. Para registrar una baliza, ingresa el identificador y las coordenadas
+de un punto dentro de un plano publicado o en borrador del piso. El servidor
+valida la ubicación y registra la baliza activa. **Gestionar** permite cambiar
+su estado.
+
+La pantalla consume los contratos de sedes, pisos e inventario de Planning.
+El contrato de inventario expone un identificador único, coordenadas y estado.
+Los campos de hardware separados y la edición de la ubicación requieren una
+ampliación del contrato.
+
 ## Code scaffolding
 
 Angular CLI includes powerful code scaffolding tools. To generate a new component, run:

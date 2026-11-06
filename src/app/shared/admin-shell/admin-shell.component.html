@@ -24,6 +24,13 @@
       </svg>
       Clínicas y sedes
     </a>
+    <a routerLink="/planning/beacons" routerLinkActive="active" ariaCurrentWhenActive="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 12v9m-3 0h6M8 15a5 5 0 1 1 8 0M5 17a9 9 0 1 1 14 0"/>
+        <circle cx="12" cy="12" r="1"/>
+      </svg>
+      Balizas
+    </a>
   </nav>
   <div class="sidebar-footer">
     <button type="button" (click)="signOut()" [disabled]="signingOut()">

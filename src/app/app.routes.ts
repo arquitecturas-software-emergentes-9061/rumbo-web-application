@@ -36,6 +36,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'planning/beacons',
+    loadComponent: () => import('./features/planning/pages/beacon-inventory/beacon-inventory.component')
+      .then(module => module.BeaconInventoryComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }

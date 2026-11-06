@@ -1,0 +1,170 @@
+<app-admin-shell [context]="siteName()">
+  <nav class="breadcrumb" aria-label="Ruta"><a routerLink="/admin">Panel</a> <span aria-hidden="true">›</span> Balizas</nav>
+  <header class="page-heading heading">
+    <div><h1>Balizas</h1><p>Gestiona las balizas BLE de tus sedes y su ubicación en el plano.</p></div>
+    <button class="primary" type="button" (click)="open(panel, null)" [disabled]="!floors().length || !!loading()">
+      <span aria-hidden="true">＋</span> Registrar baliza
+    </button>
+  </header>
+
+  <section class="filters" aria-label="Filtros del inventario">
+    <label for="beacon-search">Buscar identificador
+      <input #query id="beacon-search" type="search" placeholder="Identificador BLE" [value]="search()"
+        (input)="filter('search', query.value)">
+    </label>
+    <label for="beacon-site">Sede
+      <select #site id="beacon-site" [value]="siteId()" (change)="chooseSite(site.value)" [disabled]="!sites().length">
+        <option value="">Selecciona una sede</option>
+        @for (item of sites(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+      </select>
+    </label>
+    <label for="beacon-floor">Piso
+      <select #floor id="beacon-floor" [value]="floorId()" (change)="chooseFloor(floor.value)" [disabled]="!floors().length">
+        <option value="">Todos los pisos</option>
+        @for (item of floors(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+      </select>
+    </label>
+    <label for="beacon-status">Estado
+      <select #statusFilter id="beacon-status" [value]="status()" (change)="filter('status', statusFilter.value)">
+        <option value="">Todos</option><option value="active">Activa</option><option value="inactive">Inactiva</option>
+      </select>
+    </label>
+  </section>
+
+  @if (loading()) { <p class="banner" role="status">{{ loading() }}</p> }
+  @if (notice()) { <p class="banner success" role="status">{{ notice() }}</p> }
+  @if (error()) {
+    <div class="banner danger" role="alert">{{ error() }} <button type="button" class="secondary" (click)="retry()">Reintentar</button></div>
+  }
+
+  <div class="inventory">
+    <section class="card" aria-label="Inventario de balizas">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">Identificador BLE</th><th scope="col">Piso</th>
+            <th scope="col">Posición (X, Y)</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead>
+          <tbody>
+            @for (beacon of rows(); track beacon.id) {
+              <tr>
+                <th scope="row" class="identifier">{{ beacon.identifier }}</th>
+                <td>{{ floorName(beacon.floorId) }}</td><td>{{ beacon.x }}, {{ beacon.y }}</td>
+                <td><span class="badge" [class.active]="beacon.active">{{ beacon.active ? 'Activa' : 'Inactiva' }}</span></td>
+                <td><button class="text-button" type="button" (click)="open(panel, beacon)"
+                  [attr.aria-label]="'Gestionar ' + beacon.identifier">Gestionar</button></td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="empty">
+                @if (loading()) { Consultando inventario… }
+                @else if (error()) { Inventario no disponible. }
+                @else if (!sites().length) { Registra una sede en Clínicas y sedes para comenzar. }
+                @else if (!siteId()) { Selecciona una sede para consultar sus balizas. }
+                @else if (!floors().length && !beacons().length) { Registra un piso para ubicar una baliza. }
+                @else if (beacons().length) { Ninguna baliza coincide con los filtros. }
+                @else { Aún no hay balizas registradas para esta selección. }
+              </td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (filtered().length) {
+        <div class="pagination">
+          <span>Mostrando {{ pageStart() + 1 }}–{{ pageEnd() }} de {{ filtered().length }} balizas</span>
+          <div>
+            <button type="button" class="secondary" [disabled]="!page()" (click)="page.update(previousPage)">Anterior</button>
+            <button type="button" class="secondary" [disabled]="pageEnd() >= filtered().length"
+              (click)="page.update(nextPage)">Siguiente</button>
+          </div>
+        </div>
+      }
+    </section>
+
+    <aside class="card distribution">
+      <h2>{{ floorId() ? floorName(floorId()) : 'Distribución de balizas' }}</h2>
+      <p>Ubicaciones registradas</p>
+      <dl>
+        <div><dt>Balizas</dt><dd>{{ beacons().length }}</dd></div>
+        <div><dt>Activas</dt><dd>{{ activeCount() }}</dd></div>
+        <div><dt>Inactivas</dt><dd>{{ beacons().length - activeCount() }}</dd></div>
+      </dl>
+      <p class="info">Las posiciones se muestran en las unidades del plano. El registro requiere un punto dentro de un plano de la sede.</p>
+    </aside>
+  </div>
+
+  <dialog #panel class="drawer" aria-labelledby="beacon-dialog-title" (cancel)="dismiss($event)">
+    <header>
+      <div>
+        <span>Balizas</span>
+        <h2 id="beacon-dialog-title">{{ editing() ? 'Gestionar baliza' : 'Registrar baliza' }}</h2>
+      </div>
+      <button type="button" class="text-button" aria-label="Cerrar" (click)="dismiss()" [disabled]="saving()">✕</button>
+    </header>
+    @if (editing(); as beacon) {
+      <div class="drawer-body">
+        <dl>
+          <div><dt>Identificador</dt><dd class="identifier">{{ beacon.identifier }}</dd></div>
+          <div><dt>Piso</dt><dd>{{ floorName(beacon.floorId) }}</dd></div>
+          <div><dt>Posición (X, Y)</dt><dd>{{ beacon.x }}, {{ beacon.y }}</dd></div>
+          <div><dt>Estado</dt><dd>{{ beacon.active ? 'Activa' : 'Inactiva' }}</dd></div>
+        </dl>
+        <p class="info">Confirma el cambio de estado de esta baliza.</p>
+        @if (formError()) { <p class="banner danger" role="alert">{{ formError() }}</p> }
+      </div>
+      <footer>
+        <button class="secondary" type="button" (click)="dismiss()" [disabled]="saving()">Cancelar</button>
+        <button class="primary" type="button" (click)="toggle(beacon)" [disabled]="saving()">
+          {{ saving() ? 'Guardando…' : beacon.active ? 'Desactivar baliza' : 'Activar baliza' }}
+        </button>
+      </footer>
+    } @else {
+      <form [formGroup]="form" (ngSubmit)="register()" novalidate>
+        <div class="drawer-body">
+          <label for="beacon-identifier">Identificador BLE
+            <input id="beacon-identifier" formControlName="identifier" required autocomplete="off"
+              spellcheck="false" placeholder="Ej. AA:BB:CC:01"
+              [attr.aria-describedby]="formErrorCode() === 'BEACON_IDENTIFIER_EXISTS' ? 'beacon-id-hint beacon-duplicate' : 'beacon-id-hint'"
+              [attr.aria-invalid]="(submitted() && form.controls.identifier.invalid) || formErrorCode() === 'BEACON_IDENTIFIER_EXISTS'">
+          </label>
+          <p id="beacon-id-hint" class="hint">De 4 a 100 letras ASCII, números o símbolos : _ -</p>
+          @if (submitted() && form.controls.identifier.invalid) {
+            <p class="field-error" role="alert">Ingresa un identificador BLE válido.</p>
+          }
+          @if (formErrorCode() === 'BEACON_IDENTIFIER_EXISTS') {
+            <p id="beacon-duplicate" class="banner warning" role="alert"><strong>Identificador duplicado.</strong> {{ formError() }}</p>
+          }
+          <fieldset>
+            <legend>Ubicación en el plano</legend>
+            <label for="new-beacon-floor">Piso
+              <select id="new-beacon-floor" formControlName="floorId" required>
+                <option value="">Selecciona un piso</option>
+                @for (item of floors(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+              </select>
+            </label>
+            <div class="coordinates">
+              <label for="beacon-x">Coordenada X
+                <input id="beacon-x" type="number" formControlName="x" min="0" step="any" required>
+              </label>
+              <label for="beacon-y">Coordenada Y
+                <input id="beacon-y" type="number" formControlName="y" min="0" step="any" required>
+              </label>
+            </div>
+            <p class="hint">El origen (0, 0) está en la esquina superior izquierda del plano.</p>
+            @if (submitted() && (form.controls.floorId.invalid || form.controls.x.invalid || form.controls.y.invalid)) {
+              <p class="field-error" role="alert">Selecciona un piso e ingresa dos coordenadas iguales o mayores que cero.</p>
+            }
+            @if (formErrorCode() === 'INVALID_SPATIAL_ANCHOR') {
+              <p class="banner danger" role="alert"><strong>Ubicación inválida.</strong> {{ formError() }}</p>
+            }
+          </fieldset>
+          <p class="info">La baliza queda activa al registrarse si el servidor valida su ubicación.</p>
+          @if (formError() && formErrorCode() !== 'BEACON_IDENTIFIER_EXISTS' && formErrorCode() !== 'INVALID_SPATIAL_ANCHOR') {
+            <p class="banner danger" role="alert">{{ formError() }}</p>
+          }
+        </div>
+        <footer>
+          <button class="secondary" type="button" (click)="dismiss()" [disabled]="saving()">Cancelar</button>
+          <button class="primary" type="submit" [disabled]="saving()">{{ saving() ? 'Guardando…' : 'Guardar baliza' }}</button>
+        </footer>
+      </form>
+    }
+  </dialog>
+</app-admin-shell>

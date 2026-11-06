@@ -1,0 +1,60 @@
+.breadcrumb { display: flex; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: .82rem; }
+.breadcrumb a, .text-button { color: var(--primary); }
+.heading, .pagination, .drawer header, .drawer footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.filters { display: grid; grid-template-columns: minmax(175px, 2fr) repeat(3, minmax(110px, 1fr)); gap: 12px; margin-bottom: 16px; }
+label { display: grid; gap: 5px; font-size: .82rem; font-weight: 600; }
+input, select { width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--control-line); border-radius: var(--control-radius); color: var(--ink); background: var(--panel); }
+select:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+button { cursor: pointer; min-height: 36px; padding: 6px 10px; border-radius: var(--control-radius); font: 600 .82rem var(--font-family); }
+button:disabled { opacity: .55; cursor: default; }
+.primary { color: white; background: var(--primary-action); border: 1px solid transparent; }
+.secondary { color: var(--primary); background: var(--panel); border: 1px solid var(--control-line); }
+.text-button { border: 0; background: transparent; }
+.text-button:hover { text-decoration: underline; }
+.inventory { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 26%); gap: 14px; align-items: start; }
+.card { border: 1px solid var(--line); border-radius: var(--panel-radius); background: var(--panel); }
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+thead { color: var(--muted); background: var(--primary-soft); }
+thead th { font-size: .73rem; text-transform: uppercase; }
+.identifier { color: var(--primary); overflow-wrap: anywhere; min-width: 90px; }
+.empty, .pagination, .hint { color: var(--muted); }
+.empty { padding: 24px 12px; }
+.pagination { padding: 10px; background: var(--primary-soft); font-size: .78rem; }
+.pagination button { margin-inline-start: 5px; }
+.badge { display: inline-block; border-radius: 12px; padding: 4px 8px; background: var(--primary-soft); color: var(--ink); font-size: .76rem; }
+.badge.active, .banner.success { color: var(--success); background: var(--success-bg); }
+.distribution { padding: 14px; }
+h2 { margin: 0 0 6px; font-size: 1.1rem; }
+p, dl { margin: 0; }
+dl { margin-block: 12px; font-size: .85rem; }
+dl div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+dd { margin: 0; min-width: 0; font-weight: 600; }
+dt, .distribution p { color: var(--muted); font-size: .83rem; }
+.info, .banner { padding: 10px; border-radius: var(--control-radius); background: var(--primary-soft); font-size: .82rem; line-height: 1.5; }
+.banner { margin-bottom: 12px; }
+.banner button { margin-left: 8px; }
+.danger { color: var(--error); background: var(--error-bg); }
+.warning { color: var(--warning); background: var(--warning-bg); }
+.drawer { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(420px, 100%); max-width: 100%; height: 100%; max-height: 100%; padding: 0; border: 0; color: var(--ink); background: var(--panel); }
+.drawer::backdrop { background: rgb(17 47 72 / 46%); }
+.drawer header, .drawer footer { padding: 16px; background: var(--primary-soft); }
+.drawer header span { color: var(--muted); font-size: .78rem; }
+.drawer footer { justify-content: flex-end; }
+.drawer-body { padding: 16px; display: grid; gap: 12px; }
+.hint, .field-error { font-size: .78rem; }
+.field-error { color: var(--error); }
+fieldset { min-inline-size: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--panel-radius); display: grid; gap: 12px; padding: 12px; }
+legend { font-size: .85rem; font-weight: 600; }
+.coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 920px) {
+  .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 540px) {
+  th, td { padding: 6px 5px; overflow-wrap: anywhere; }
+  thead th { text-transform: none; }
+  .identifier { min-width: 0; }
+  td button { padding-inline: 2px; }
+}
