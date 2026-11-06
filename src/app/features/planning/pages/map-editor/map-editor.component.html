@@ -148,7 +148,7 @@
           <p class="hint tool-hint" role="status">{{ editor.feedback() ?? toolHint() }}</p>
           <app-graph-canvas [nodes]="editor.floorNodes()" [connections]="editor.floorConnections()"
             [destinations]="editor.graph().destinations" [plan]="editor.plan()" [tool]="editor.tool()"
-            [selection]="editor.selection()" [pendingFrom]="editor.pendingFrom()"
+            [selection]="editor.selection()" [pendingFrom]="editor.pendingFrom()" [backdrop]="backdrop()"
             (canvasPoint)="editor.canvasClick($event.x, $event.y)" (nodePicked)="editor.nodeClick($event)"
             (connectionPicked)="editor.connectionClick($event)" (nodeMoved)="editor.moveTo($event.id, $event.x, $event.y)" />
           <ul class="legend" aria-label="Leyenda">

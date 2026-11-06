@@ -242,6 +242,7 @@ describe('MapEditorComponent', () => {
       expect(component.editor.graph().nodes).toHaveLength(2);
       expect(component.editor.dirty()).toBe(true);
       expect(component.success()).toContain('Propuesta aplicada');
+      expect(component.backdrop()?.zones.length).toBe(1);
     });
 
     it('refuses to apply a proposal while the scale is not calibrated and keeps the preview', () => {

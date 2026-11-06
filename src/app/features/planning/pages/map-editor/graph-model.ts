@@ -137,33 +137,48 @@ export function upsertDestination(graph: EditorGraph, nodeId: string, input: Des
 }
 
 /**
- * Replaces everything on one floor with the generated proposal. Nodes become intersections joined
- * by doorway connections measured with the confirmed scale, so the caller must have checked it.
+ * Replaces the generated part of one floor with the proposal while keeping its destinations: every
+ * DESTINATION node and its directory entry survive, and a proposal node that lands next to one reuses
+ * it instead of creating a duplicate. Other nodes of the floor are replaced. Kept destinations that no
+ * proposal link reaches stay unconnected so validation flags them for review. The caller must have
+ * checked that the scale is confirmed, because distances are measured in meters.
  */
 export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds,
                               newId: IdFactory = randomId): EditorGraph {
-  const floorNodeIds = new Set(graph.nodes.filter(node => node.floorId === plan.floorId).map(node => node.id));
+  const floorNodes = graph.nodes.filter(node => node.floorId === plan.floorId);
+  const destinationNodes = floorNodes.filter(node => node.type === 'DESTINATION');
+  const removed = new Set(floorNodes.filter(node => node.type !== 'DESTINATION').map(node => node.id));
   const kept: EditorGraph = {
-    nodes: graph.nodes.filter(node => !floorNodeIds.has(node.id)),
-    connections: graph.connections.filter(item => !floorNodeIds.has(item.sourceNodeId) && !floorNodeIds.has(item.targetNodeId)),
-    destinations: graph.destinations.filter(entry => !floorNodeIds.has(entry.nodeId))
+    nodes: graph.nodes.filter(node => !removed.has(node.id)),
+    connections: graph.connections.filter(item => !removed.has(item.sourceNodeId) && !removed.has(item.targetNodeId)),
+    destinations: graph.destinations.filter(entry => !removed.has(entry.nodeId))
   };
+  const snap = Math.max(plan.widthUnits, plan.heightUnits) * 0.02;
   const ids = new Map<string, string>();
-  const nodes: GraphNode[] = proposal.nodes.map(node => {
+  const created: GraphNode[] = [];
+  for (const node of proposal.nodes) {
+    const point = clampPoint(plan, node.x, node.y);
+    const near = destinationNodes.find(existing => Math.hypot(existing.x - point.x, existing.y - point.y) <= snap);
+    if (near) { ids.set(node.id, near.id); continue; }
     const id = newId();
     ids.set(node.id, id);
-    return { id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...clampPoint(plan, node.x, node.y), type: 'INTERSECTION' };
-  });
-  const byId = new Map(nodes.map(node => [node.id, node]));
-  const connections: GraphConnection[] = [];
+    created.push({ id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...point, type: 'INTERSECTION' });
+  }
+  const all = [...kept.nodes, ...created];
+  const byId = new Map(all.map(node => [node.id, node]));
+  const connections = [...kept.connections];
+  const linked = new Set(connections.map(item => [item.sourceNodeId, item.targetNodeId].sort().join('|')));
   for (const link of proposal.connections) {
     const source = ids.get(link.fromNodeId), target = ids.get(link.toNodeId);
     if (!source || !target || source === target) continue;
+    const key = [source, target].sort().join('|');
+    if (linked.has(key)) continue;
+    linked.add(key);
     const meters = distanceMeters(byId.get(source) as GraphNode, byId.get(target) as GraphNode, plan);
     connections.push({
       id: newId(), sourceNodeId: source, targetNodeId: target, type: 'DOORWAY', distanceMeters: meters, weight: meters,
       verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true
     });
   }
-  return { nodes: [...kept.nodes, ...nodes], connections: [...kept.connections, ...connections], destinations: kept.destinations };
+  return { nodes: all, connections, destinations: kept.destinations };
 }

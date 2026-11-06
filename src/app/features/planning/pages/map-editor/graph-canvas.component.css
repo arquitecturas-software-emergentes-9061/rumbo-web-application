@@ -15,3 +15,7 @@
 .node:focus-visible circle { stroke: #142e44; }
 .node text { fill: var(--ink); pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 1.5px; }
 .empty { padding: 24px; color: var(--muted); text-align: center; }
+.backdrop { pointer-events: none; opacity: .55; }
+.backdrop rect { stroke: #3b7fa3; }
+.backdrop line { stroke: #142e44; stroke-linecap: round; }
+.backdrop text { fill: var(--muted); }

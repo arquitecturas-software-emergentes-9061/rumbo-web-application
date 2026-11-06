@@ -72,6 +72,8 @@ export class MapEditorComponent implements OnInit {
   readonly saving = signal(false);
   readonly saveFailure = signal<SaveFailure | null>(null);
   readonly serverAlerts = signal<GraphAlert[]>([]);
+  /** Rooms and walls of the last model applied to the draft, kept as read-only context. */
+  readonly backdrop = signal<ModelProposal | null>(null);
 
   readonly nodeForm = this.fb.group({
     type: this.fb.control<NodeType>('INTERSECTION'),
@@ -214,6 +216,7 @@ export class MapEditorComponent implements OnInit {
     this.floorSelection.next(null);
     this.error.set(null);
     this.draft.set(null);
+    this.backdrop.set(null);
     this.editor.load({ nodes: [], connections: [], destinations: [] }, []);
     if (!id) { this.loading.set(false); return; }
     this.loading.set(true);
@@ -309,6 +312,7 @@ export class MapEditorComponent implements OnInit {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;
     }
+    this.backdrop.set(current);
     this.resetPreview();
     this.tab.set('properties');
     this.success.set('Propuesta aplicada al borrador. Revísala y guarda los cambios.');

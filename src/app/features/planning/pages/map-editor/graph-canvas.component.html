@@ -5,6 +5,19 @@
     [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge'"
     (click)="canvasClicked($event)" (pointermove)="pointerMoved($event)">
     <rect class="plan-area" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
+    @if (backdrop(); as context) {
+      <g class="backdrop" aria-hidden="true">
+        @for (zone of context.zones; track zone.id) {
+          <rect [attr.x]="zone.x" [attr.y]="zone.y" [attr.width]="zone.width" [attr.height]="zone.height"
+            [attr.fill]="fill(zone.category)" [attr.stroke-width]="unit()" />
+          <text [attr.x]="zone.x + zone.width / 2" [attr.y]="zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
+            text-anchor="middle">{{ zone.name }}</text>
+        }
+        @for (wall of context.wallCandidates; track $index) {
+          <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+        }
+      </g>
+    }
     @for (line of lines(); track line.connection.id) {
       <line class="edge" [class.selected]="isSelected('connection', line.connection.id)"
         [class.one-way]="!line.connection.bidirectional"

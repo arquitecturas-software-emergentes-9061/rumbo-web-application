@@ -74,10 +74,36 @@ describe('graph editing operations', () => {
       connections: [{ id: 'k', fromNodeId: 'p1', toNodeId: 'p2', distanceUnits: 20 }, { id: 'bad', fromNodeId: 'p1', toNodeId: 'nope', distanceUnits: 1 }]
     };
     const next = applyProposal(base, proposal, plan, () => `id-${++counter}`);
-    expect(next.nodes.map(node => node.id).sort()).toEqual(['id-1', 'id-2', 'keep']);
+    // 'a' and 'b' are replaced; the destination 'c' and the node of another floor survive. The
+    // proposal node next to 'c' is merged into it, so only one new node is created.
+    expect(next.nodes.map(node => node.id).sort()).toEqual(['c', 'id-1', 'keep']);
     expect(next.connections).toHaveLength(1);
-    expect(next.connections[0]).toMatchObject({ type: 'DOORWAY', distanceMeters: 10 });
-    expect(next.destinations).toEqual([]);
+    expect(next.connections[0]).toMatchObject({ type: 'DOORWAY', distanceMeters: 10, targetNodeId: 'c' });
+    expect(next.destinations.map(entry => entry.nodeId)).toEqual(['c']);
+  });
+
+  it('keeps destinations and their directory entries after regenerating a floor', () => {
+    const proposal = { zones: [], wallCandidates: [], warnings: [], nodes: [{ id: 'p1', label: 'N1', x: 200, y: 5 }], connections: [] };
+    const next = applyProposal(build(), proposal, plan, () => 'new');
+    expect(next.nodes.find(node => node.id === 'c')).toMatchObject({ type: 'DESTINATION', x: 20 });
+    expect(next.destinations).toEqual([expect.objectContaining({ id: 'd1', nodeId: 'c', name: 'Caja' })]);
+    // No access node remains after regeneration, so the author is asked to mark one.
+    expect(codes(next)).toContain('MISSING_ACCESS');
+  });
+
+  it('reuses a kept destination when a proposal node lands next to it', () => {
+    const proposal = {
+      zones: [], wallCandidates: [], warnings: [],
+      nodes: [{ id: 'p1', label: 'N1', x: 20.5, y: 0.5 }, { id: 'p2', label: 'N2', x: 60, y: 0 }],
+      connections: [{ id: 'k', fromNodeId: 'p1', toNodeId: 'p2', distanceUnits: 40 }]
+    };
+    let counter = 0;
+    const next = applyProposal(build(), proposal, plan, () => `id-${++counter}`);
+    expect(next.nodes.filter(node => node.type === 'DESTINATION')).toHaveLength(1);
+    expect(next.nodes).toHaveLength(2);
+    expect(next.connections).toHaveLength(1);
+    expect(next.connections[0]).toMatchObject({ sourceNodeId: 'c', type: 'DOORWAY' });
+    expect(next.destinations[0].nodeId).toBe('c');
   });
 });
 

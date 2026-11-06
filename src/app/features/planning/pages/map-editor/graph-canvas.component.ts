@@ -2,6 +2,7 @@ import { Component, computed, input, output, signal } from '@angular/core';
 import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
 import { Destination, PlanBounds } from './graph-model';
 import { Selection, Tool } from './graph-editor-state';
+import { ModelProposal, zoneFill } from './model-preview';
 
 interface DragState { id: string; x: number; y: number; moved: boolean }
 
@@ -23,6 +24,8 @@ export class GraphCanvasComponent {
   readonly tool = input<Tool>('select');
   readonly selection = input<Selection | null>(null);
   readonly pendingFrom = input<string | null>(null);
+  /** Rooms and walls of the last applied model, drawn read-only behind the graph for context. */
+  readonly backdrop = input<ModelProposal | null>(null);
 
   readonly canvasPoint = output<{ x: number; y: number }>();
   readonly nodePicked = output<string>();
@@ -48,6 +51,8 @@ export class GraphCanvasComponent {
       return from && to ? [{ connection, x1: from.x, y1: from.y, x2: to.x, y2: to.y }] : [];
     });
   });
+
+  protected fill(category: string): string { return zoneFill(category); }
 
   protected color(node: GraphNode): string { return NODE_COLORS[node.type] ?? NODE_COLORS['REFERENCE']; }
 
