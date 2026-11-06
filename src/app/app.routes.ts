@@ -36,6 +36,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'planning/interfloor-connections',
+    loadComponent: () => import('./features/planning/pages/interfloor-connections/interfloor-connections.component')
+      .then(module => module.InterfloorConnectionsComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }
