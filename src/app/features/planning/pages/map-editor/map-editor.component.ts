@@ -66,6 +66,10 @@ export class MapEditorComponent implements OnInit {
     const current = this.proposal();
     if (!current) return [];
     const list = [...current.warnings];
+    const expected = Math.max(current.zones.length - 1, 0);
+    if (current.connections.length < expected) {
+      list.push(`Se detectaron pocas conexiones (${current.connections.length}) para ${current.zones.length} ambientes. Revisa los recorridos antes de guardar el borrador.`);
+    }
     if (this.scaleProvisional()) list.push('La escala es provisional: calibra el plano antes de publicar el mapa.');
     list.push('Las conexiones propuestas son candidatas. Revísalas antes de guardarlas como borrador.');
     return list;

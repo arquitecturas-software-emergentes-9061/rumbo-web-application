@@ -71,6 +71,17 @@ describe('MapEditorComponent', () => {
     expect(component.connectionLine(proposal.connections[0])).toEqual({ x1: 50, y1: 60, x2: 50, y2: 90 });
   });
 
+  it('warns when too few connections were detected for the rooms found', () => {
+    create([svg]);
+    const rooms = ['a', 'b', 'c'].map((id, index) => ({ id, name: id, category: 'ROOM', x: index * 10, y: 0, width: 10, height: 10 }));
+    plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, zones: rooms, connections: [proposal.connections[0]] } })));
+    component.generate();
+    expect(component.alerts().some(message => message.includes('pocas conexiones (1) para 3 ambientes'))).toBe(true);
+    plans.interpret.mockReturnValue(of(result()));
+    component.generate();
+    expect(component.alerts().some(message => message.includes('pocas conexiones'))).toBe(false);
+  });
+
   it('omits the provisional alert once the scale is confirmed', () => {
     create([svg]);
     plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED', metersPerUnit: 0.1 })));
