@@ -36,6 +36,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'planning/maps',
+    loadComponent: () => import('./features/planning/pages/floor-plan-calibration/floor-plan-calibration.component')
+      .then(module => module.FloorPlanCalibrationComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }
