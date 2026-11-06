@@ -1,0 +1,33 @@
+@if (plan(); as bounds) {
+  <svg class="canvas" [attr.viewBox]="'0 0 ' + bounds.widthUnits + ' ' + bounds.heightUnits"
+    preserveAspectRatio="xMidYMid meet" role="application"
+    aria-label="Lienzo del mapa. Usa las flechas sobre un nodo enfocado para moverlo."
+    [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge'"
+    (click)="canvasClicked($event)" (pointermove)="pointerMoved($event)">
+    <rect class="plan-area" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
+    @for (line of lines(); track line.connection.id) {
+      <line class="edge" [class.selected]="isSelected('connection', line.connection.id)"
+        [class.one-way]="!line.connection.bidirectional"
+        [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+        [attr.stroke-width]="unit() * 2" />
+      <line class="edge-hit" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+        [attr.stroke-width]="unit() * 10" role="button" tabindex="0"
+        [attr.aria-label]="'Conexión ' + line.connection.type"
+        (click)="lineClicked($event, line.connection.id)" (keydown.enter)="connectionPicked.emit(line.connection.id)" />
+    }
+    @for (node of positioned(); track node.id) {
+      <g class="node" [class.selected]="isSelected('node', node.id)" [class.pending]="pendingFrom() === node.id"
+        role="button" tabindex="0" [attr.aria-label]="'Nodo ' + node.type + (label(node) ? ': ' + label(node) : '')"
+        (pointerdown)="nodeDown($event, node)" (pointerup)="pointerUp($event, node)"
+        (click)="nodeClicked($event, node)" (keydown)="nodeKey($event, node)">
+        <circle [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="unit() * 6" [attr.fill]="color(node)"
+          [attr.stroke-width]="unit() * 2" />
+        @if (label(node); as text) {
+          <text [attr.x]="node.x" [attr.y]="node.y - unit() * 10" [attr.font-size]="unit() * 8" text-anchor="middle">{{ text }}</text>
+        }
+      </g>
+    }
+  </svg>
+} @else {
+  <p class="empty">Este piso no tiene un plano en el borrador. Carga y calibra un plano en Mapas.</p>
+}

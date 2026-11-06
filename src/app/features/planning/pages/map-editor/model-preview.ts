@@ -60,3 +60,20 @@ export function describeGenerationError(error: HttpErrorResponse): string {
   if (error.status === 413) return 'El plano es demasiado grande para interpretarlo.';
   return 'No se pudo generar el modelo. Intenta de nuevo o revisa el plano.';
 }
+
+/** The API names zones it could not label "ROOM 3", "CORRIDOR 2" or "SERVICE 1". */
+const GENERATED_NAME = /^(ROOM|CORRIDOR|SERVICE) \d+$/;
+
+export function isUnlabeled(zone: Pick<ModelProposal['zones'][number], 'name'>): boolean {
+  return GENERATED_NAME.test(zone.name.trim());
+}
+
+export function unlabeledZones(proposal: ModelProposal) {
+  return proposal.zones.filter(isUnlabeled);
+}
+
+export function describeDraftLoadError(error: HttpErrorResponse): string {
+  if (error.status === 0) return 'No hay conexión con la API para cargar el borrador. Intenta de nuevo.';
+  if (error.status === 403) return 'Tu cuenta no tiene permiso para ver el borrador de esta sede.';
+  return 'No se pudo cargar el borrador de la sede. Recarga la página e inténtalo de nuevo.';
+}

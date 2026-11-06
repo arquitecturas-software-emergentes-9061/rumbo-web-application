@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { describeGenerationError, isEmptyProposal, isSvgVersion, summarize, viewBoxFor, zoneFill } from './model-preview';
+import { describeDraftLoadError, describeGenerationError, isEmptyProposal, isSvgVersion, isUnlabeled, summarize, viewBoxFor, zoneFill } from './model-preview';
 
 const proposal = {
   zones: [{ id: 'z1', name: 'Consultorio 101', category: 'ROOM', x: 0, y: 0, width: 100, height: 60 }],
@@ -40,5 +40,18 @@ describe('model preview helpers', () => {
     expect(describeGenerationError(new HttpErrorResponse({ status: 0 }))).toContain('conexión');
     expect(describeGenerationError(new HttpErrorResponse({ status: 403 }))).toContain('permiso');
     expect(describeGenerationError(new HttpErrorResponse({ status: 500 }))).toContain('No se pudo generar');
+  });
+
+  it('explains draft loading failures without mentioning model generation', () => {
+    expect(describeDraftLoadError(new HttpErrorResponse({ status: 0 }))).toContain('conexión');
+    expect(describeDraftLoadError(new HttpErrorResponse({ status: 403 }))).toContain('permiso');
+    expect(describeDraftLoadError(new HttpErrorResponse({ status: 500 }))).toContain('cargar el borrador');
+  });
+
+  it('detects names the API generated for unlabeled zones', () => {
+    expect(isUnlabeled({ name: 'ROOM 3' })).toBe(true);
+    expect(isUnlabeled({ name: 'CORRIDOR 12' })).toBe(true);
+    expect(isUnlabeled({ name: 'Consultorio 101' })).toBe(false);
+    expect(isUnlabeled({ name: 'Room 3' })).toBe(false);
   });
 });
