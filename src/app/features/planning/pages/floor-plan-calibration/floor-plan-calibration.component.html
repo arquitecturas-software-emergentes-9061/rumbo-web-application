@@ -1,0 +1,202 @@
+<app-admin-shell [context]="siteName()">
+  <div class="breadcrumbs">
+    <a routerLink="/admin">Panel</a><span aria-hidden="true">›</span> Mapas
+    @if (siteName()) { <span aria-hidden="true">›</span> {{ siteName() }} }
+  </div>
+  <header class="page-heading">
+    <h1>Carga y calibración de planos</h1>
+    <p>Administra los planos de tus pisos y define su escala para la navegación indoor.</p>
+  </header>
+
+  <section class="card location" aria-label="Ubicación del plano">
+    <label>Sede
+      <select #site [value]="siteId()" (change)="chooseSite(site.value)"
+        [disabled]="!sites().length || step() === 2 || pending() === 'Cargando archivo…'">
+        <option value="">Selecciona una sede</option>
+        @for (item of sites(); track item.id) {
+          <option [value]="item.id">{{ item.name }}</option>
+        }
+      </select>
+    </label>
+    <label>Piso
+      <select #floor [value]="floorId()" (change)="chooseFloor(floor.value)"
+        [disabled]="!floors().length || step() === 2 || pending() === 'Cargando archivo…'">
+        <option value="">Selecciona un piso</option>
+        @for (item of floors(); track item.id) {
+          <option [value]="item.id">{{ item.name }}</option>
+        }
+      </select>
+    </label>
+    @if (siteId() && !floors().length && !pending() && !error()) {
+      <p class="hint">Esta sede todavía no tiene pisos registrados.</p>
+    }
+  </section>
+
+  <ol class="steps" aria-label="Pasos">
+    <li [attr.aria-current]="step() === 1 ? 'step' : null"><span>1</span> Cargar plano</li>
+    <li [attr.aria-current]="step() === 2 ? 'step' : null"><span>2</span> Calibrar escala</li>
+  </ol>
+
+  @if (error()) {
+    <div class="notice error" role="alert">
+      <strong>{{ step() === 1 ? 'Revisa la carga del plano' : 'Revisa la calibración' }}</strong>
+      <span>{{ error() }}</span>
+      @if (!sites().length) {
+        <button type="button" class="secondary" (click)="loadSites()">Volver a intentar</button>
+      } @else if (siteId() && !floors().length) {
+        <button type="button" class="secondary" (click)="chooseSite(siteId())">Volver a intentar</button>
+      }
+    </div>
+  }
+  @if (pending()) { <p class="notice status" role="status">{{ pending() }}</p> }
+  @if (message()) { <p class="notice success" role="status">{{ message() }}</p> }
+
+  @if (step() === 1) {
+    <section class="card upload">
+      <h2>Plano del piso</h2>
+      <p class="hint">Cada carga válida crea una versión y conserva los archivos anteriores.</p>
+      <div class="drop" [class.active]="dragOver()" [class.invalid]="!!error() && !!floorId()"
+        (dragover)="drag($event, true)" (dragleave)="drag($event, false)" (drop)="drop($event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M12 15V3m-4 4 4-4 4 4M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>
+        </svg>
+        <strong>Arrastra y suelta el archivo aquí</strong>
+        <span class="hint">SVG, PDF de una página, PNG o JPG · Máximo 25 MB</span>
+        <input #file type="file" accept=".svg,.pdf,.png,.jpg,.jpeg" hidden (change)="filePicked(file)">
+        <button type="button" class="primary" [disabled]="!floorId() || !!pending()" (click)="file.click()">
+          Seleccionar archivo
+        </button>
+      </div>
+
+      @if (versions().length) {
+        <p class="current">
+          <strong>Plano vigente · v{{ versions()[0].version }}</strong>
+          <span>{{ versions()[0].fileName }} · {{ versions()[0].createdAt | date:'dd/MM/yyyy' }}</span>
+        </p>
+        <div class="version">
+          <label>Versión del plano
+            <select #version [value]="selected()?.id ?? ''" (change)="chooseVersion(version.value)" [disabled]="!!pending()">
+              @for (item of versions(); track item.id; let current = $first) {
+                <option [value]="item.id">v{{ item.version }} · {{ item.fileName }}{{ current ? ' (vigente)' : '' }}</option>
+              }
+            </select>
+          </label>
+          <button type="button" class="primary" (click)="openCalibration()" [disabled]="!!pending() || !selected()">
+            Continuar a calibración <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      } @else if (floorId() && !pending() && !error()) {
+        <p class="hint empty">Todavía no hay planos registrados en este piso.</p>
+      } @else if (!floorId()) {
+        <p class="hint empty">Selecciona la sede y el piso para cargar un plano.</p>
+      }
+      @if (error() && floorId() && !versions().length && !pending()) {
+        <button type="button" class="secondary retry" (click)="chooseFloor(floorId())">Actualizar versiones</button>
+      }
+      <div class="guidance">
+        <p><strong>Formato recomendado</strong> PDF vectorial de una página</p>
+        <p><strong>Límite de imagen</strong> Hasta 8192 × 8192 píxeles</p>
+        <p><strong>Capas del plano</strong> Usa un plano con los espacios visibles</p>
+      </div>
+    </section>
+  } @else {
+    <section class="card calibration">
+      <div class="calibration-heading">
+        <div>
+          <h2>Calibrar escala</h2>
+          <p class="hint">{{ selected()?.fileName }} · v{{ selected()?.version }}</p>
+        </div>
+        <button type="button" class="secondary" (click)="backToUpload()">← Volver a la carga</button>
+      </div>
+
+      <div class="workbench">
+        <div class="canvas-card">
+          <div class="canvas-toolbar">
+            <strong>Lienzo de calibración</strong>
+            <div class="zoom" aria-label="Zoom">
+              <button type="button" class="secondary" aria-label="Alejar" (click)="adjustZoom(-0.5)" [disabled]="!preview() || zoom() === 1">−</button>
+              <button type="button" class="secondary" aria-label="Restablecer zoom" (click)="adjustZoom(0)">{{ 100 * zoom() }} %</button>
+              <button type="button" class="secondary" aria-label="Acercar" (click)="adjustZoom(0.5)" [disabled]="!preview() || zoom() === 3">+</button>
+            </div>
+          </div>
+        <div class="canvas-pane">
+          @if (preview(); as plan) {
+            <div class="plan-area" [style.width.%]="100 * zoom()" [style.max-width.px]="560 * zoom() * plan.width / plan.height">
+            <button type="button" class="plan" [style.aspect-ratio]="plan.width + ' / ' + plan.height"
+              aria-label="Seleccionar punto en el plano. Usa las flechas para mover el cursor y Enter para confirmar"
+              (click)="pick($event)" (keydown)="moveCursor($event)">
+              <img [src]="plan.url" alt="Vista previa del plano original" (error)="previewFailed()" draggable="false">
+              <svg class="markers" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @if (points().length === 2) {
+                  <line [attr.x1]="100 * points()[0].x / plan.width" [attr.y1]="100 * points()[0].y / plan.height"
+                    [attr.x2]="100 * points()[1].x / plan.width" [attr.y2]="100 * points()[1].y / plan.height"
+                    vector-effect="non-scaling-stroke"/>
+                }
+              </svg>
+              @for (point of points(); track $index) {
+                <span class="marker" [style.left.%]="100 * point.x / plan.width"
+                  [style.top.%]="100 * point.y / plan.height">{{ $first ? 'A' : 'B' }}</span>
+              }
+              @if (cursor(); as position) {
+                <span class="cursor" [style.left.%]="100 * position.x / plan.width"
+                  [style.top.%]="100 * position.y / plan.height" aria-hidden="true">+</span>
+              }
+            </button>
+            </div>
+          } @else if (!pending()) {
+            <div class="preview-empty">
+              <p>No hay una vista previa disponible.</p>
+              <button type="button" class="secondary" (click)="openCalibration()">Volver a intentar</button>
+            </div>
+          }
+        </div>
+        <p class="canvas-caption" aria-live="polite">Puntos seleccionados · {{ points().length }}/2</p>
+        </div>
+        <div class="controls">
+          <h3>Calibrar escala</h3>
+          <div class="instructions">
+            <strong>Instrucciones</strong>
+            <ol><li>Marca dos puntos cuya distancia real conozcas.</li><li>Ingresa esa distancia y guarda la escala.</li></ol>
+          </div>
+          <ol class="points">
+            @for (label of ['A', 'B']; track label; let index = $index) {
+              <li><strong>Punto {{ label }}</strong>
+                @if (points()[index]; as point) {
+                  <small>x {{ point.x | number:'1.0-1' }} · y {{ point.y | number:'1.0-1' }}</small>
+                } @else { <small>Por seleccionar</small> }
+              </li>
+            }
+          </ol>
+          <button type="button" class="secondary" (click)="clearPoints()" [disabled]="!points().length || !!pending()">
+            Limpiar puntos
+          </button>
+
+          <div class="measurement">
+            <label>Distancia real
+              <input #measure type="number" min="0" step="any" inputmode="decimal" placeholder="Ej. 5"
+                [value]="distance() ?? ''" (input)="distance.set(measure.value === '' ? null : measure.valueAsNumber)"
+                [disabled]="!!pending()">
+            </label>
+            <label>Unidad
+              <select #units [value]="unit()" (change)="unit.set(units.value === 'CENTIMETERS' ? 'CENTIMETERS' : 'METERS')"
+                [disabled]="!!pending()">
+                <option value="METERS">Metros</option>
+                <option value="CENTIMETERS">Centímetros</option>
+              </select>
+            </label>
+          </div>
+          @if (distance() !== null && !(distance()! > 0)) {
+            <p class="field-error">Ingresa una distancia real mayor que cero.</p>
+          }
+          @if (saved(); as calibration) {
+            <div class="notice success scale" role="status">
+              <strong>Escala guardada</strong>
+              <span>{{ calibration.metersPerUnit | number:'1.0-12' }} m por unidad del plano</span>
+            </div>
+          }
+          <button type="button" class="primary" (click)="save()" [disabled]="!canSave()">Guardar calibración</button>
+        </div>
+      </div>
+    </section>
+  }
+</app-admin-shell>

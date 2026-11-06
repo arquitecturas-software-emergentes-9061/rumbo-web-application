@@ -12,6 +12,17 @@ ng serve
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
+## Carga y calibración de planos
+
+Entra como administrador de clínica, registra una sede y un piso en **Clínicas y sedes**,
+y abre **Mapas**. Selecciona la ubicación, carga un archivo o elige una versión
+existente, y continúa a **Calibrar escala**. Marca dos puntos, ingresa su distancia
+real y guarda. Al volver a abrir esa versión se recuperan los puntos y la escala.
+
+La pantalla requiere una API local con las operaciones de sedes y pisos (PR-101),
+almacenamiento y descarga de originales (PR-106), historial (PR-123) y calibración
+de originales (PR-111 API). El historial y la medición se guardan en el backend.
+
 ## Code scaffolding
 
 Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
