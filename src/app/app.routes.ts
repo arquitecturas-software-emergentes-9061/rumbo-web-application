@@ -48,6 +48,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'planning/map-editor',
+    loadComponent: () => import('./features/planning/pages/map-editor/map-editor.component')
+      .then(module => module.MapEditorComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }
