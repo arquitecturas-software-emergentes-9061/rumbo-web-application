@@ -32,6 +32,22 @@ export interface Calibration extends CalibrationInput {
   metersPerUnit: number;
 }
 
+export interface PlanInterpretation {
+  versionId: string;
+  floorId: string;
+  mediaType: string;
+  processing: 'SVG_CANDIDATES' | 'PREVIEW_ONLY';
+  scaleStatus: 'PROVISIONAL' | 'CONFIRMED';
+  metersPerUnit: number | null;
+  proposal: {
+    zones: { id: string; name: string; category: string; x: number; y: number; width: number; height: number }[];
+    nodes: (Point & { id: string; label: string })[];
+    connections: { id: string; fromNodeId: string; toNodeId: string; distanceUnits: number }[];
+    wallCandidates: { x1: number; y1: number; x2: number; y2: number }[];
+    warnings: string[];
+  } | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class FloorPlansService {
   private readonly http = inject(HttpClient);
@@ -50,6 +66,11 @@ export class FloorPlansService {
     return this.http.get(`${this.plans(site, floor)}/versions/${encodeURIComponent(id)}`, {
       responseType: 'blob', observe: 'response'
     });
+  }
+
+  interpret(site: string, floor: string, id: string) {
+    return this.http.post<PlanInterpretation>(
+      `${this.plans(site, floor)}/versions/${encodeURIComponent(id)}/interpretation`, null);
   }
 
   calibration(site: string, id: string) {

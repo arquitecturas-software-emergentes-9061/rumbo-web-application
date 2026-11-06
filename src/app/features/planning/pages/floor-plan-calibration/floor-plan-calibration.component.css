@@ -63,6 +63,11 @@ button:disabled { opacity: .55; cursor: default; }
 .measurement label { flex: 1 1 86px; }
 .scale { margin: 0; }
 .field-error { font-size: .8rem; }
+.provisional { color: var(--warning); background: var(--warning-bg); }
+.proposal-layer { fill: var(--primary); overflow: hidden; }
+.proposal-layer .candidate-link { stroke: #007b70; stroke-dasharray: 6 3; }
+.proposal-review { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+.proposal-review :is(details, button) { margin-top: 8px; }
 .retry, .preview-empty p { margin-bottom: 8px; }
 @media (max-width: 900px) {
   .workbench { grid-template-columns: minmax(0, 1fr); }

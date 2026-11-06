@@ -6,7 +6,7 @@ import { firstValueFrom } from 'rxjs';
 import { SitesService } from '../../../../core/services/sites.service';
 import { Floor, Site } from '../../../../core/models/site-floor.model';
 import { AdminShellComponent } from '../../../../shared/admin-shell/admin-shell.component';
-import { Calibration, FloorPlansService, PlanVersion, Point } from './floor-plans.service';
+import { Calibration, FloorPlansService, PlanInterpretation, PlanVersion, Point } from './floor-plans.service';
 import { renderPdfPreview } from './plan-preview';
 
 interface Preview {
@@ -24,6 +24,7 @@ const messages: Record<string, string> = {
   PLAN_EMPTY_FILE: 'El archivo está vacío. Selecciona un plano válido.',
   PLAN_INVALID_NAME: 'El nombre del archivo no es válido.',
   INVALID_SCALE_REFERENCE: 'Revisa que los puntos sean distintos, estén dentro del plano y la distancia sea positiva.',
+  FLOOR_PLAN_NOT_FOUND: 'La versión del plano ya no está disponible para esta sede y piso.',
 };
 
 @Component({
@@ -55,6 +56,10 @@ export class FloorPlanCalibrationComponent {
   protected readonly distance = signal<number | null>(null);
   protected readonly unit = signal<Calibration['unit']>('METERS');
   protected readonly saved = signal<Calibration | null>(null);
+  protected readonly interpretation = signal<PlanInterpretation | null>(null);
+  protected readonly showProposal = signal(true);
+  protected readonly proposalNodes = computed(() =>
+    new Map(this.interpretation()?.proposal?.nodes.map(node => [node.id, node])));
   protected readonly dragOver = signal(false);
   protected readonly canSave = computed(() => {
     const distance = this.distance();
@@ -206,6 +211,29 @@ export class FloorPlanCalibrationComponent {
     this.step.set(1);
   }
 
+  protected async interpret() {
+    const version = this.selected();
+    if (!version || !this.preview() || this.pending()) return;
+    const revision = ++this.revision;
+    this.error.set('');
+    this.message.set('');
+    this.pending.set('Revisando la versión del plano…');
+    try {
+      const result = await firstValueFrom(this.plans.interpret(this.siteId(), this.floorId(), version.id));
+      if (revision !== this.revision) return;
+      this.interpretation.set(result);
+      this.showProposal.set(true);
+    } catch (error) {
+      if (revision === this.revision) this.interpretation.set(null);
+      const detail = error instanceof HttpErrorResponse && error.error?.code === 'INVALID_SVG_PLAN'
+        ? error.error?.detail : null;
+      this.showError(revision, error, typeof detail === 'string'
+        ? detail : 'No pudimos interpretar esta versión. El original sigue disponible.');
+    } finally {
+      this.finish(revision);
+    }
+  }
+
   protected previewFailed() {
     this.clearPreview();
     this.error.set('No pudimos visualizar el archivo de esta versión.');
@@ -280,6 +308,9 @@ export class FloorPlanCalibrationComponent {
       if (revision !== this.revision) return;
       this.restore(saved);
       this.message.set('Calibración guardada para esta versión.');
+      this.interpretation.update(value => value ? {
+        ...value, scaleStatus: 'CONFIRMED', metersPerUnit: saved.metersPerUnit,
+      } : null);
     } catch (error) {
       this.showError(revision, error, 'No pudimos guardar la calibración. Puedes volver a intentarlo.');
     } finally {
@@ -308,6 +339,7 @@ export class FloorPlanCalibrationComponent {
     this.clearPoints();
     this.cursor.set(null);
     this.saved.set(null);
+    this.interpretation.set(null);
     this.distance.set(null);
     this.unit.set('METERS');
   }

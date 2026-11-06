@@ -19,6 +19,15 @@ describe('Floor plan HTTP contract', () => {
   });
   afterEach(() => http.verify());
 
+  it('requests the interpretation of the selected stored version without reuploading it', () => {
+    const result = { versionId: version.id, floorId: 'floor-1', mediaType: version.mediaType,
+      processing: 'SVG_CANDIDATES', scaleStatus: 'PROVISIONAL', metersPerUnit: null, proposal: null };
+    service.interpret('site-1', 'floor-1', version.id).subscribe(response => expect(response).toEqual(result));
+    const call = http.expectOne({ method: 'POST', url: plans + '/versions/original-1/interpretation' });
+    expect(call.request.body).toBeNull();
+    call.flush(result);
+  });
+
   it('lists versions, posts the original as multipart file and downloads the selected version', () => {
     service.list('site-1', 'floor-1').subscribe(result => expect(result).toEqual([version]));
     http.expectOne({ method: 'GET', url: plans }).flush([version]);

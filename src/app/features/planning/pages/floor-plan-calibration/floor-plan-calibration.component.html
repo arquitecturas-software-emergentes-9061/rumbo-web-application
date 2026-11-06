@@ -94,7 +94,7 @@
         <button type="button" class="secondary retry" (click)="chooseFloor(floorId())">Actualizar versiones</button>
       }
       <div class="guidance">
-        <p><strong>Formato recomendado</strong> PDF vectorial de una página</p>
+        <p><strong>Interpretación geométrica</strong> SVG compatible. PDF, PNG y JPG admiten vista previa y calibración.</p>
         <p><strong>Límite de imagen</strong> Hasta 8192 × 8192 píxeles</p>
         <p><strong>Capas del plano</strong> Usa un plano con los espacios visibles</p>
       </div>
@@ -108,6 +108,12 @@
         </div>
         <button type="button" class="secondary" (click)="backToUpload()">← Volver a la carga</button>
       </div>
+
+      @if (preview() && !saved()) {
+        <p class="notice provisional" role="status"><strong>Escala provisional</strong>
+          <span>Registra una distancia real para mostrar medidas en metros.</span>
+        </p>
+      }
 
       <div class="workbench">
         <div class="canvas-card">
@@ -126,6 +132,24 @@
               aria-label="Seleccionar punto en el plano. Usa las flechas para mover el cursor y Enter para confirmar"
               (click)="pick($event)" (keydown)="moveCursor($event)">
               <img [src]="plan.url" alt="Vista previa del plano original" (error)="previewFailed()" draggable="false">
+              @if (showProposal() && interpretation()?.proposal; as proposal) {
+                <svg class="markers proposal-layer" [attr.viewBox]="'0 0 ' + plan.width + ' ' + plan.height"
+                  preserveAspectRatio="none" aria-hidden="true">
+                  @for (zone of proposal.zones; track zone.id) {
+                    <rect [attr.x]="zone.x" [attr.y]="zone.y" [attr.width]="zone.width" [attr.height]="zone.height"
+                      fill-opacity=".12" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>
+                  }
+                  @for (wall of proposal.wallCandidates; track $index) {
+                    <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
+                      vector-effect="non-scaling-stroke"/>
+                  }
+                  @for (link of proposal.connections; track link.id) {
+                    <line class="candidate-link" [attr.x1]="proposalNodes().get(link.fromNodeId)?.x"
+                      [attr.y1]="proposalNodes().get(link.fromNodeId)?.y" [attr.x2]="proposalNodes().get(link.toNodeId)?.x"
+                      [attr.y2]="proposalNodes().get(link.toNodeId)?.y" vector-effect="non-scaling-stroke"/>
+                  }
+                </svg>
+              }
               <svg class="markers" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 @if (points().length === 2) {
                   <line [attr.x1]="100 * points()[0].x / plan.width" [attr.y1]="100 * points()[0].y / plan.height"
@@ -197,6 +221,45 @@
           <button type="button" class="primary" (click)="save()" [disabled]="!canSave()">Guardar calibración</button>
         </div>
       </div>
+      <section class="proposal-review" aria-label="Propuesta de modelo">
+        <div class="calibration-heading">
+          <div><h2>Editor de mapa</h2><p class="hint">Revisa la geometría sobre el original de esta versión.</p></div>
+          <button type="button" class="secondary" (click)="interpret()" [disabled]="!preview() || !!pending()">
+            Revisar interpretación
+          </button>
+        </div>
+        @if (interpretation(); as result) {
+          @if (result.proposal; as proposal) {
+            <p class="hint" role="status">Vista previa · sin guardar. {{ proposal.zones.length }} zonas y
+              {{ proposal.connections.length }} conexiones candidatas.</p>
+            <button type="button" class="secondary" [attr.aria-pressed]="showProposal()" (click)="showProposal.set(!showProposal())">
+              {{ showProposal() ? 'Ocultar' : 'Mostrar' }} capa de propuesta
+            </button>
+            @if (proposal.zones.length) {
+              <details><summary>Dimensiones de zonas</summary>
+                <ul>
+                  @for (zone of proposal.zones; track zone.id) {
+                    <li>{{ zone.name }} ·
+                      {{ zone.width * (result.metersPerUnit ?? 1) | number:'1.0-2' }} ×
+                      {{ zone.height * (result.metersPerUnit ?? 1) | number:'1.0-2' }}
+                      {{ result.metersPerUnit === null ? 'unidades del plano' : 'm' }}
+                    </li>
+                  }
+                </ul>
+              </details>
+            }
+            @if (proposal.warnings.length) {
+              <details><summary>Alertas de la propuesta ({{ proposal.warnings.length }})</summary>
+                <ul>@for (warning of proposal.warnings; track $index) { <li>{{ warning }}</li> }</ul>
+              </details>
+            }
+          } @else {
+            <p class="notice status" role="status">
+              Este formato admite vista previa y calibración. La extracción geométrica está disponible para SVG compatible.
+            </p>
+          }
+        }
+      </section>
     </section>
   }
 </app-admin-shell>
