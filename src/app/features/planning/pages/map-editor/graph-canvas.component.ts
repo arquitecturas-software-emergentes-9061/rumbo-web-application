@@ -2,7 +2,7 @@ import { Component, computed, input, output, signal } from '@angular/core';
 import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
 import { Destination, PlanBounds } from './graph-model';
 import { Selection, Tool } from './graph-editor-state';
-import { ModelProposal, zoneFill } from './model-preview';
+import { ModelProposal, polygonPath, zoneFill, zonePath } from './model-preview';
 
 interface DragState { id: string; x: number; y: number; moved: boolean }
 
@@ -17,6 +17,8 @@ const NODE_COLORS: Record<string, string> = {
   styleUrl: './graph-canvas.component.css'
 })
 export class GraphCanvasComponent {
+  protected readonly polygonPath = polygonPath;
+  protected readonly zonePath = zonePath;
   readonly nodes = input.required<GraphNode[]>();
   readonly connections = input.required<GraphConnection[]>();
   readonly destinations = input<Destination[]>([]);

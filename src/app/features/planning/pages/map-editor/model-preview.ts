@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { PlanInterpretation } from '../floor-plan-calibration/floor-plans.service';
+import { ModelZone, PlanInterpretation, PlanPolygon } from '../floor-plan-calibration/floor-plans.service';
 
 export interface ModelDoor { id: string; x1: number; y1: number; x2: number; y2: number }
 
@@ -7,6 +7,19 @@ export interface ModelDoor { id: string; x1: number; y1: number; x2: number; y2:
 export type ModelProposal = NonNullable<PlanInterpretation['proposal']> & { doors?: ModelDoor[] };
 
 export interface ViewBox { x: number; y: number; width: number; height: number }
+
+/** Even-odd SVG paths retain courtyards and obstacles enclosed by a room boundary. */
+export function polygonPath(polygon: PlanPolygon): string {
+  return [polygon.outer, ...polygon.holes].filter(ring => ring.length >= 3)
+    .map(ring => `M ${ring.map(point => `${point.x} ${point.y}`).join(' L ')} Z`).join(' ');
+}
+
+export function zonePath(zone: ModelZone): string {
+  return polygonPath(zone.polygon ?? { outer: [
+    { x: zone.x, y: zone.y }, { x: zone.x + zone.width, y: zone.y },
+    { x: zone.x + zone.width, y: zone.y + zone.height }, { x: zone.x, y: zone.y + zone.height }
+  ], holes: [] });
+}
 
 export interface ProposalSummary { zones: number; nodes: number; connections: number; walls: number; doors: number }
 
@@ -30,6 +43,9 @@ export function viewBoxFor(proposal: ModelProposal, marginRatio = 0.05): ViewBox
   proposal.nodes.forEach(node => { xs.push(node.x); ys.push(node.y); });
   proposal.wallCandidates.forEach(wall => { xs.push(wall.x1, wall.x2); ys.push(wall.y1, wall.y2); });
   (proposal.doors ?? []).forEach(door => { xs.push(door.x1, door.x2); ys.push(door.y1, door.y2); });
+  const polygons = [...proposal.zones.flatMap(zone => zone.polygon ? [zone.polygon] : []),
+    ...(proposal.barriers ?? []).map(barrier => barrier.polygon), ...(proposal.walkable ?? [])];
+  polygons.forEach(polygon => polygon.outer.forEach(point => { xs.push(point.x); ys.push(point.y); }));
   if (xs.length === 0) return { x: 0, y: 0, width: 100, height: 100 };
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const width = Math.max(maxX - minX, 1), height = Math.max(maxY - minY, 1);
@@ -109,7 +125,29 @@ export function correctZone(proposal: ModelProposal, zoneId: string, patch: Zone
 }
 
 /** Zones whose node no recognized connection reaches, so travelers could never arrive at them. */
+/**
+ * Zones that no connection reaches. A zone counts as reached when its own node is linked (annotated SVG) or when a
+ * linked node lies inside it: generated corridors are traversed by skeleton nodes that do not carry the zone id.
+ */
 export function isolatedZones(proposal: ModelProposal) {
   const linked = new Set(proposal.connections.flatMap(link => [link.fromNodeId, link.toNodeId]));
-  return proposal.zones.filter(zone => !linked.has(zone.id));
+  const points = proposal.nodes.filter(node => linked.has(node.id));
+  return proposal.zones.filter(zone => !linked.has(zone.id) && !points.some(point => zoneContains(zone, point)));
+}
+
+function zoneContains(zone: ModelZone, point: { x: number; y: number }): boolean {
+  if (!zone.polygon) {
+    // Half-open, like the polygon test, so a node on a shared wall belongs to one zone only.
+    return point.x >= zone.x && point.x < zone.x + zone.width && point.y >= zone.y && point.y < zone.y + zone.height;
+  }
+  return ringContains(zone.polygon.outer, point) && !zone.polygon.holes.some(hole => ringContains(hole, point));
+}
+
+function ringContains(ring: { x: number; y: number }[], point: { x: number; y: number }): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }

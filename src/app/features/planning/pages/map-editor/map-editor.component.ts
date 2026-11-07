@@ -17,7 +17,7 @@ import { GraphAlert, countErrors } from './graph-validation';
 import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from './map-editor-api.service';
 import {
   ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeCreateDraftError, describeDraftLoadError, describeGenerationError, isEmptyProposal,
-  isUnlabeled, isolatedZones, nodeLabel, summarize, unlabeledZones, viewBoxFor, zoneFill
+  isUnlabeled, isolatedZones, nodeLabel, polygonPath, summarize, unlabeledZones, viewBoxFor, zoneFill, zonePath
 } from './model-preview';
 
 type PanelTab = 'properties' | 'alerts';
@@ -31,6 +31,8 @@ const EMPTY_PROPOSAL: ModelProposal = { zones: [], nodes: [], connections: [], w
   styleUrl: './map-editor.component.css'
 })
 export class MapEditorComponent implements OnInit {
+  readonly polygonPath = polygonPath;
+  readonly zonePath = zonePath;
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly sitesApi = inject(SitesService);
   private readonly plansApi = inject(FloorPlansService);
