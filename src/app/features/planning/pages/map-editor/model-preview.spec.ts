@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { categoryLabel, correctZone, isolatedZones, describeDraftLoadError, describeGenerationError, isEmptyProposal, isSvgVersion, isUnlabeled, summarize, viewBoxFor, zoneFill } from './model-preview';
+import { categoryLabel, correctZone, isolatedZones, describeDraftLoadError, describeGenerationError, isEmptyProposal, isUnlabeled, summarize, viewBoxFor, zoneFill } from './model-preview';
 
 const proposal = {
   zones: [{ id: 'z1', name: 'Consultorio 101', category: 'ROOM', x: 0, y: 0, width: 100, height: 60 }],
@@ -10,13 +10,6 @@ const proposal = {
 };
 
 describe('model preview helpers', () => {
-  it('accepts only vector SVG plans for generation', () => {
-    expect(isSvgVersion({ mediaType: 'image/svg+xml', fileName: 'p.svg' })).toBe(true);
-    expect(isSvgVersion({ mediaType: 'application/octet-stream', fileName: 'P.SVG' })).toBe(true);
-    expect(isSvgVersion({ mediaType: 'application/pdf', fileName: 'p.pdf' })).toBe(false);
-    expect(isSvgVersion(null)).toBe(false);
-  });
-
   it('summarizes and detects an empty proposal', () => {
     expect(summarize(proposal)).toEqual({ zones: 1, nodes: 1, connections: 1, walls: 1, doors: 0 });
     expect(isEmptyProposal(proposal)).toBe(false);

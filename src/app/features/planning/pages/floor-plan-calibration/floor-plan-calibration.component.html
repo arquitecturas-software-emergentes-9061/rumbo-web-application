@@ -94,7 +94,7 @@
         <button type="button" class="secondary retry" (click)="chooseFloor(floorId())">Actualizar versiones</button>
       }
       <div class="guidance">
-        <p><strong>Interpretación geométrica</strong> SVG compatible. PDF, PNG y JPG admiten vista previa y calibración.</p>
+        <p><strong>Interpretación geométrica</strong> Un SVG anotado se lee exacto. PDF, PNG y JPG se interpretan con el servicio de reconocimiento cuando está activo; si no, admiten vista previa y calibración. Toda propuesta se revisa antes de publicar.</p>
         <p><strong>Límite de imagen</strong> Hasta 8192 × 8192 píxeles</p>
         <p><strong>Capas del plano</strong> Usa un plano con los espacios visibles</p>
       </div>
@@ -255,7 +255,7 @@
             }
           } @else {
             <p class="notice status" role="status">
-              Este formato admite vista previa y calibración. La extracción geométrica está disponible para SVG compatible.
+              Este plano solo admite vista previa y calibración: no se reconoció su geometría. La extracción automática funciona con SVG anotado y, si el servicio de reconocimiento está activo, con PDF, PNG y JPG nítidos.
             </p>
           }
         }

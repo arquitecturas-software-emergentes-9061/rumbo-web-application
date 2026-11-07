@@ -53,13 +53,21 @@ describe('MapEditorComponent', () => {
     });
   });
 
-  it('selects the current plan and enables generation only for SVG', () => {
+  it('selects the current plan and enables generation for any stored format', () => {
     create([svg, pdf]);
     expect(component.versionId()).toBe('v2');
     expect(component.canGenerate()).toBe(true);
     component.selectVersion('v1');
-    expect(component.canGenerate()).toBe(false);
-    expect(component.blockedReason()).toContain('SVG');
+    expect(component.canGenerate()).toBe(true);
+    expect(component.blockedReason()).toBeNull();
+  });
+
+  it('asks the API to interpret a PDF instead of refusing it in the browser', () => {
+    create([pdf]);
+    plans.interpret.mockReturnValue(of(result({ mediaType: 'application/pdf' })));
+    component.generate();
+    expect(plans.interpret).toHaveBeenCalledWith('site', 'floor', 'v1');
+    expect(component.proposal()).not.toBeNull();
   });
 
   it('explains when the floor has no plan', () => {
