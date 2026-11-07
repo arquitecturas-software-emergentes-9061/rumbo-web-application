@@ -77,6 +77,15 @@ export function describeDraftLoadError(error: HttpErrorResponse): string {
   return 'No se pudo cargar el borrador de la sede. Recarga la página e inténtalo de nuevo.';
 }
 
+export function describeCreateDraftError(error: HttpErrorResponse): string {
+  const code: string | undefined = error.error?.code;
+  if (error.status === 0) return 'No hay conexión con la API para crear el borrador. Intenta de nuevo.';
+  if (error.status === 403) return 'Tu cuenta no tiene permiso para editar el mapa de esta sede.';
+  if (error.status === 404) return 'El plano seleccionado ya no existe para este piso. Recarga la página.';
+  if (code === 'SITE_MAP_ALREADY_EXISTS') return 'Esta sede ya tiene un mapa publicado: crea una nueva versión del mapa para editarlo.';
+  return 'No se pudo crear el borrador de la sede. Inténtalo de nuevo.';
+}
+
 export const ZONE_CATEGORIES: { value: string; label: string }[] = [
   { value: 'ROOM', label: 'Consultorio o ambiente' }, { value: 'CORRIDOR', label: 'Pasillo' },
   { value: 'SERVICE', label: 'Servicio' }, { value: 'ELEVATOR', label: 'Ascensor' }, { value: 'STAIRS', label: 'Escalera' }

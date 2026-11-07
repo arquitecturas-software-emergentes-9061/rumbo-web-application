@@ -46,6 +46,12 @@ export class MapEditorApiService {
     );
   }
 
+  /** Starts the site's first draft from stored floor plans; the API reads their size and confirmed scale. */
+  createFirstDraft(siteId: string, plans: { floorId: string; planVersionId: string }[]) {
+    return this.http.post<DraftResponse>(`${this.mapsUrl(siteId)}/draft`, { plans }, { observe: 'response' })
+      .pipe(map(response => this.snapshot(response)));
+  }
+
   save(snapshot: DraftSnapshot, graph: EditorGraph) {
     const url = `${this.mapsUrl(snapshot.siteId)}/${encodeURIComponent(snapshot.mapId)}/versions/${encodeURIComponent(snapshot.modelVersionId)}/graph`;
     const body = {

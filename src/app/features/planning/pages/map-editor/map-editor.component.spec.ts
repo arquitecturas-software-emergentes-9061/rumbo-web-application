@@ -28,7 +28,7 @@ describe('MapEditorComponent', () => {
   });
   const sites = { loadSites: () => of([site]), loadFloors: vi.fn() };
   const plans = { list: vi.fn(), interpret: vi.fn() };
-  const drafts = { load: vi.fn(), save: vi.fn() };
+  const drafts = { load: vi.fn(), save: vi.fn(), createFirstDraft: vi.fn() };
   const draft = (scale: number | null = 0.5, graph: DraftSnapshot['graph'] = { nodes: [], connections: [], destinations: [] }): DraftSnapshot => ({
     siteId: 'site', mapId: 'm', modelVersionId: 'v', etag: '"rev-1"', graph,
     plans: [{ floorId: 'floor', planVersionId: 'pv', widthUnits: 100, heightUnits: 60, metersPerUnit: scale }]
@@ -265,14 +265,76 @@ describe('MapEditorComponent', () => {
       expect(component.editor.graph().nodes).toHaveLength(0);
     });
 
-    it('keeps the preview when there is no draft to apply it to', () => {
+    it('creates the first draft when applying a proposal to a site without one', () => {
       drafts.load.mockReturnValue(of(null));
+      drafts.createFirstDraft.mockReturnValue(of(draft(0.5)));
+      create([svg]);
+      plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED' })));
+      component.generate();
+      expect(component.canApply()).toBe(true);
+      component.applyProposal();
+      expect(drafts.createFirstDraft).toHaveBeenCalledWith('site', [{ floorId: 'floor', planVersionId: 'v2' }]);
+      expect(component.draft()?.etag).toBe('"rev-1"');
+      expect(component.proposal()).toBeNull();
+      expect(component.editor.graph().nodes).toHaveLength(2);
+      expect(component.success()).toContain('Propuesta aplicada');
+    });
+
+    it('keeps the preview when the first draft cannot be created', () => {
+      drafts.load.mockReturnValue(of(null));
+      drafts.createFirstDraft.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
       create([svg]);
       plans.interpret.mockReturnValue(of(result()));
       component.generate();
       component.applyProposal();
       expect(component.proposal()).not.toBeNull();
-      expect(component.notice()).toContain('aún no tiene un borrador');
+      expect(component.draft()).toBeNull();
+      expect(component.error()).toContain('No hay conexión');
+    });
+  });
+
+  describe('first draft of a site without a map', () => {
+    it('creates an empty draft from the selected plan and enables editing', () => {
+      drafts.load.mockReturnValue(of(null));
+      drafts.createFirstDraft.mockReturnValue(of(draft(0.5)));
+      create([svg]);
+      expect(component.canCreateDraft()).toBe(true);
+      component.createDraft();
+      expect(drafts.createFirstDraft).toHaveBeenCalledWith('site', [{ floorId: 'floor', planVersionId: 'v2' }]);
+      expect(component.draft()?.plans[0].metersPerUnit).toBe(0.5);
+      expect(component.editor.plan()?.widthUnits).toBe(100);
+      expect(component.canCreateDraft()).toBe(false);
+      expect(component.success()).toContain('Borrador creado');
+    });
+
+    it('cannot create a draft without a plan or when one is already loaded', () => {
+      drafts.load.mockReturnValue(of(null));
+      create([]);
+      expect(component.canCreateDraft()).toBe(false);
+      component.createDraft();
+      expect(drafts.createFirstDraft).not.toHaveBeenCalled();
+      drafts.load.mockReturnValue(of(draft()));
+      create([svg]);
+      expect(component.canCreateDraft()).toBe(false);
+    });
+
+    it('loads the existing draft when another session created it first', () => {
+      drafts.load.mockReturnValueOnce(of(null)).mockReturnValueOnce(of(draft()));
+      drafts.createFirstDraft.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'DRAFT_ALREADY_EXISTS' } })));
+      create([svg]);
+      component.createDraft();
+      expect(drafts.load).toHaveBeenCalledTimes(2);
+      expect(component.draft()?.etag).toBe('"rev-1"');
+      expect(component.notice()).toContain('ya tenía un borrador');
+    });
+
+    it('explains that a site with a published map needs a new version instead', () => {
+      drafts.load.mockReturnValue(of(null));
+      drafts.createFirstDraft.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'SITE_MAP_ALREADY_EXISTS' } })));
+      create([svg]);
+      component.createDraft();
+      expect(component.draft()).toBeNull();
+      expect(component.error()).toContain('mapa publicado');
     });
   });
 
