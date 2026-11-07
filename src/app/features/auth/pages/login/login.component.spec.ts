@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { LoginComponent } from './login.component';
@@ -108,5 +108,16 @@ describe('LoginComponent', () => {
     component.onSubmit();
 
     expect(component.errorMessage()).toContain('No se pudo conectar con el servidor');
+  });
+
+  it('links to the sign-up screen', () => {
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('a[href="/registro"]');
+    expect(link).toBeTruthy();
+  });
+
+  it('shows the account-created notice after registering', () => {
+    const route = TestBed.inject(ActivatedRoute);
+    vi.spyOn(route.snapshot, 'queryParams', 'get').mockReturnValue({ reason: 'account-created' });
+    expect(component.sessionNotice).toContain('Cuenta creada');
   });
 });
