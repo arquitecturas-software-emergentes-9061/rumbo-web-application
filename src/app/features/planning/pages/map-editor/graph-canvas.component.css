@@ -1,0 +1,22 @@
+:host { display: block; }
+.canvas { width: 100%; height: auto; max-height: 560px; background: #fafcfd; border: 1px solid var(--line); border-radius: var(--control-radius); touch-action: none; }
+.canvas.tool-node { cursor: crosshair; }
+.canvas.tool-edge .node { cursor: pointer; }
+.plan-area { fill: #f1f6f9; stroke: var(--control-line); stroke-width: .5; vector-effect: non-scaling-stroke; }
+.edge { stroke: #5a7b94; pointer-events: none; }
+.edge.one-way { stroke-dasharray: 6 3; }
+.edge.selected { stroke: var(--primary); }
+.edge-hit { stroke: transparent; cursor: pointer; }
+.edge-hit:focus-visible { stroke: rgb(9 106 153 / .35); outline: none; }
+.node { cursor: grab; outline: none; }
+.node circle { stroke: #fff; }
+.node.selected circle { stroke: #142e44; }
+.node.pending circle { stroke: #654516; stroke-dasharray: 3 2; }
+.node:focus-visible circle { stroke: #142e44; }
+.node text { fill: var(--ink); pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 1.5px; }
+.empty { padding: 24px; color: var(--muted); text-align: center; }
+.backdrop { pointer-events: none; opacity: .55; }
+.backdrop rect { stroke: #3b7fa3; }
+.backdrop line { stroke: #142e44; stroke-linecap: round; }
+.backdrop text { fill: var(--muted); }
+.backdrop .door { stroke: #c77700; }

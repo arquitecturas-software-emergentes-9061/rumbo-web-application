@@ -1,0 +1,333 @@
+<app-admin-shell [context]="site()?.name ?? null">
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/planning/maps">Mapas</a>
+      <span aria-hidden="true">›</span>
+      <span>{{ site()?.name ?? 'Sede' }}</span>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">{{ floor()?.name ?? 'Piso' }}</span>
+    </nav>
+    <h1>Editor de mapa</h1>
+  </header>
+
+  @if (error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  @if (loading() && sites().length === 0) {
+    <p role="status">Cargando sedes…</p>
+  } @else if (loadFailed()) {
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (!site()) {
+    <section class="card">
+      <h2>Aún no hay sedes</h2>
+      <p>Registra una sede y sus pisos antes de generar un mapa.</p>
+      <a routerLink="/planning/sites" class="outline link-button">Ir a Clínicas y sedes</a>
+    </section>
+  } @else {
+    <div class="selectors">
+      @if (sites().length > 1) {
+        <label>Sede
+          <select [value]="siteId() ?? ''" (change)="selectSite($any($event.target).value)">
+            @for (item of sites(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+          </select>
+        </label>
+      }
+      <label>Piso
+        <select [value]="floorId() ?? ''" [disabled]="floors().length === 0" (change)="selectFloor($any($event.target).value)">
+          @for (item of floors(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+        </select>
+      </label>
+      <label>Plano
+        <select [value]="versionId() ?? ''" [disabled]="versions().length === 0" (change)="selectVersion($any($event.target).value)">
+          @for (item of versions(); track item.id) {
+            <option [value]="item.id">v{{ item.version }} · {{ item.fileName }}</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    <div class="toolbar" role="toolbar" aria-label="Acciones del modelo">
+      <button type="button" class="primary generate" [disabled]="!canGenerate()" (click)="generate()">
+        {{ generating() ? 'Generando…' : '✦ Generar modelo' }}
+      </button>
+      @if (proposal()) {
+        <span class="preview-badge">Vista previa — sin guardar</span>
+      } @else if (editor.dirty()) {
+        <span class="preview-badge dirty">Cambios sin guardar</span>
+      }
+      <span class="spacer"></span>
+      <button type="button" class="outline" [disabled]="!editor.canUndo()" (click)="editor.undo()" aria-label="Deshacer">↶ Deshacer</button>
+      <button type="button" class="outline" [disabled]="!editor.canRedo()" (click)="editor.redo()" aria-label="Rehacer">↷ Rehacer</button>
+      <button type="button" class="outline save" [disabled]="!canSave()" (click)="save()">
+        {{ saving() ? 'Guardando…' : 'Guardar borrador' }}
+      </button>
+    </div>
+    @if (blockedReason(); as reason) {
+      <p class="hint" role="status">{{ reason }}</p>
+    }
+    @if (notice(); as message) {
+      <p class="notice" role="status">{{ message }}</p>
+    }
+    @if (success(); as message) {
+      <p class="success" role="status">{{ message }}</p>
+    }
+    @if (saveFailure(); as failure) {
+      <div class="alert failure" role="alert">
+        <p>{{ failure.message }}</p>
+        @if (failure.kind === 'stale' || failure.kind === 'not-draft' || failure.kind === 'missing') {
+          <button type="button" class="outline" (click)="reloadDraft()">Recargar borrador</button>
+        }
+        @if (failure.kind === 'offline' || failure.kind === 'other') {
+          <button type="button" class="outline" [disabled]="saving()" (click)="save()">Reintentar guardado</button>
+        }
+      </div>
+    }
+
+    <div class="editor" [class.no-tools]="!!proposal()">
+      @if (!proposal()) {
+        <div class="tools" role="toolbar" aria-label="Herramientas de edición" aria-orientation="vertical">
+          @for (item of tools; track item.id) {
+            <button type="button" [class.active]="editor.tool() === item.id" [attr.aria-pressed]="editor.tool() === item.id"
+              [title]="item.hint" [disabled]="!draft()" (click)="chooseTool(item.id)">{{ item.label }}</button>
+          }
+        </div>
+      }
+
+      <section class="canvas card" aria-label="Lienzo del modelo">
+        @if (proposal(); as current) {
+          <div class="proposal-bar">
+            <span>Propuesta generada desde el plano. No se guardó nada.</span>
+            <span class="actions">
+              <button type="button" class="primary" [disabled]="!canApply()" (click)="applyProposal()"
+                [title]="draft() ? '' : 'La sede aún no tiene un borrador'">Aplicar al borrador</button>
+              <button type="button" class="outline" (click)="discardProposal()">Descartar</button>
+            </span>
+          </div>
+          <svg class="plan" [attr.viewBox]="viewBox()" preserveAspectRatio="xMidYMid meet" role="img"
+            [attr.aria-label]="'Modelo propuesto con ' + current.zones.length + ' ambientes y ' + current.nodes.length + ' nodos'">
+            @for (zone of current.zones; track zone.id) {
+              <rect class="zone" [class.selected]="zone.id === selectedZoneId()" [class.unlabeled]="unlabeledZone(zone)" [class.isolated]="isIsolated(zone.id)"
+                [attr.x]="zone.x" [attr.y]="zone.y" [attr.width]="zone.width" [attr.height]="zone.height"
+                [attr.fill]="fill(zone.category)" [attr.stroke-width]="strokeUnit() * 1.5" tabindex="0" role="button"
+                [attr.aria-label]="'Ambiente ' + zone.name + (unlabeledZone(zone) ? ' sin etiqueta confiable' : '')"
+                (click)="selectZone(zone.id)" (keydown.enter)="selectZone(zone.id)" (keydown.space)="selectZone(zone.id)" />
+              <text class="zone-label" [attr.x]="zone.x + zone.width / 2" [attr.y]="zone.y + zone.height / 2"
+                [attr.font-size]="strokeUnit() * 6.5" text-anchor="middle">{{ unlabeledZone(zone) ? '⚠ ' : '' }}{{ zone.name }}</text>
+            }
+            @for (wall of current.wallCandidates; track $index) {
+              <line class="wall" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
+                [attr.stroke-width]="strokeUnit() * 2.2" />
+            }
+            @for (door of current.doors ?? []; track door.id) {
+              <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2"
+                [attr.stroke-width]="strokeUnit() * 3.2"><title>Puerta {{ door.id }}</title></line>
+            }
+            @for (connection of current.connections; track connection.id) {
+              @if (connectionLine(connection); as line) {
+                <line class="edge" [class.selected]="connection.id === selectedLinkId()" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+                  [attr.stroke-width]="strokeUnit() * 2" />
+              }
+            }
+            @for (node of current.nodes; track node.id) {
+              <circle class="node" [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="strokeUnit() * 4"
+                [attr.stroke-width]="strokeUnit() * 2" />
+            }
+          </svg>
+          <ul class="legend" aria-label="Leyenda">
+            <li><span class="swatch node-s"></span>Nodo</li>
+            <li><span class="swatch edge-s"></span>Arista</li>
+            <li><span class="swatch wall-s"></span>Muro</li>
+            <li><span class="swatch zone-s"></span>Ambiente</li>
+            <li><span class="swatch door-s"></span>Puerta</li>
+            <li><span class="swatch unlabeled-s"></span>Sin etiqueta</li>
+            <li><span class="swatch isolated-s"></span>Sin conexión</li>
+          </ul>
+        } @else if (draftLoading()) {
+          <p role="status" class="empty">Cargando el borrador de la sede…</p>
+        } @else if (!draft()) {
+          <div class="empty">
+            <p><strong>Esta sede aún no tiene un borrador de mapa.</strong></p>
+            <p>El editor trabaja sobre el borrador vigente. Puedes generar una vista previa desde un plano SVG anotado; para guardarla hace falta un borrador.</p>
+          </div>
+        } @else {
+          <p class="hint tool-hint" role="status">{{ editor.feedback() ?? toolHint() }}</p>
+          <app-graph-canvas [nodes]="editor.floorNodes()" [connections]="editor.floorConnections()"
+            [destinations]="editor.graph().destinations" [plan]="editor.plan()" [tool]="editor.tool()"
+            [selection]="editor.selection()" [pendingFrom]="editor.pendingFrom()" [backdrop]="backdrop()"
+            (canvasPoint)="editor.canvasClick($event.x, $event.y)" (nodePicked)="editor.nodeClick($event)"
+            (connectionPicked)="editor.connectionClick($event)" (nodeMoved)="editor.moveTo($event.id, $event.x, $event.y)" />
+          <ul class="legend" aria-label="Leyenda">
+            <li><span class="swatch dot access"></span>Acceso</li>
+            <li><span class="swatch dot dest"></span>Destino</li>
+            <li><span class="swatch dot inter"></span>Intersección</li>
+            <li><span class="swatch dot vert"></span>Conexión vertical</li>
+            <li><span class="swatch edge-s"></span>Arista</li>
+            <li><span class="swatch edge-s dashed"></span>Un solo sentido</li>
+          </ul>
+        }
+      </section>
+
+      <aside class="side card" aria-label="Panel del modelo">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" [attr.aria-selected]="tab() === 'properties'" [class.active]="tab() === 'properties'"
+            (click)="setTab('properties')">Propiedades</button>
+          <button type="button" role="tab" [attr.aria-selected]="tab() === 'alerts'" [class.active]="tab() === 'alerts'"
+            (click)="setTab('alerts')">Alertas
+            @if ((proposal() ? alerts().length : graphAlerts().length) > 0) {
+              <span class="count" [class.has-errors]="!proposal() && graphErrorCount() > 0">{{ proposal() ? alerts().length : graphAlerts().length }}</span>
+            }
+          </button>
+        </div>
+
+        @if (tab() === 'properties') {
+          @if (proposal()) {
+            @if (selectedZone(); as zone) {
+              <h2>Ambiente reconocido</h2>
+              <p class="mono id">ID: {{ zone.id }}</p>
+              <form [formGroup]="zoneForm" (ngSubmit)="applyZoneCorrection()">
+                <label>Nombre
+                  <input formControlName="name" maxlength="150" />
+                  @if (zoneForm.controls.name.touched && zoneForm.controls.name.invalid) { <small class="field-error">Obligatorio.</small> }
+                </label>
+                <label>Tipo de ambiente
+                  <select formControlName="category">
+                    @for (option of zoneCategories; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                  </select>
+                </label>
+                <button type="submit" class="primary">Aplicar corrección</button>
+                <button type="button" class="outline" (click)="resetZone()">Restablecer lo reconocido</button>
+              </form>
+              @if (unlabeledZone(zone)) {
+                <p class="warn-box">Este ambiente no tiene una etiqueta confiable en el plano. Escribe su nombre y confirma su tipo.</p>
+              }
+              @if (isIsolated(zone.id)) {
+                <p class="warn-box">Ninguna conexión reconocida llega a este ambiente.</p>
+              }
+              <p class="hint">Al aplicar la propuesta, los consultorios y servicios con nombre se crean como destinos, y los ascensores y escaleras como conexiones verticales.</p>
+            } @else if (summary(); as counts) {
+              <h2>Resumen de la propuesta</h2>
+              <dl>
+                <dt>Ambientes</dt><dd>{{ counts.zones }}</dd>
+                <dt>Sin etiqueta</dt><dd>{{ unlabeled().length }}</dd>
+                <dt>Nodos</dt><dd>{{ counts.nodes }}</dd>
+                <dt>Conexiones</dt><dd>{{ counts.connections }}</dd>
+                <dt>Muros candidatos</dt><dd>{{ counts.walls }}</dd>
+                <dt>Puertas</dt><dd>{{ counts.doors }}</dd>
+                <dt>Sin conexión</dt><dd>{{ isolated().length }}</dd>
+              </dl>
+              <h3>Ambientes</h3>
+              <ul class="items">
+                @for (zone of proposal()?.zones ?? []; track zone.id) {
+                  <li><button type="button" (click)="selectZone(zone.id)">
+                    <span>{{ zone.name }}</span><small>{{ categoryName(zone.category) }}{{ isIsolated(zone.id) ? ' · sin conexión' : '' }}</small>
+                  </button></li>
+                }
+              </ul>
+              <h3>Red de recorridos</h3>
+              @if ((proposal()?.connections ?? []).length === 0) {
+                <p class="hint">No se reconoció ninguna conexión entre ambientes.</p>
+              } @else {
+                <ul class="items">
+                  @for (link of proposal()?.connections ?? []; track link.id) {
+                    <li><button type="button" [class.active]="link.id === selectedLinkId()" (click)="selectLink(link.id)">
+                      <span>{{ labelOf(link.fromNodeId) }} ↔ {{ labelOf(link.toNodeId) }}</span><small>{{ link.distanceUnits }} u</small>
+                    </button></li>
+                  }
+                </ul>
+              }
+            }
+          } @else if (editor.selectedNode(); as node) {
+            <h2>Propiedades del nodo</h2>
+            <p class="mono id">ID: {{ node.id }}</p>
+            <form [formGroup]="nodeForm" (ngSubmit)="applyNode()">
+              <label>Tipo
+                <select formControlName="type">
+                  @for (option of nodeTypes; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                </select>
+              </label>
+              <div class="pair">
+                <label>X <input type="number" step="0.1" min="0" formControlName="x" class="mono" /></label>
+                <label>Y <input type="number" step="0.1" min="0" formControlName="y" class="mono" /></label>
+              </div>
+              @if (nodeForm.controls.type.value === 'DESTINATION') {
+                <fieldset [formGroup]="destinationForm">
+                  <legend>Entrada del directorio</legend>
+                  <label>Nombre *
+                    <input formControlName="name" maxlength="150" />
+                    @if (destinationForm.controls.name.touched && destinationForm.controls.name.invalid) { <small class="field-error">Obligatorio.</small> }
+                  </label>
+                  <label>Tipo
+                    <select formControlName="type">
+                      @for (option of destinationTypes; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                    </select>
+                  </label>
+                  <label>Especialidad <input formControlName="specialty" maxlength="150" /></label>
+                </fieldset>
+              }
+              <button type="submit" class="primary">Aplicar cambios</button>
+              <button type="button" class="outline danger" (click)="editor.deleteSelection()">Eliminar nodo</button>
+              <button type="button" (click)="editor.select(null)">Deseleccionar</button>
+            </form>
+          } @else if (editor.selectedConnection(); as link) {
+            <h2>Propiedades de la arista</h2>
+            <p class="mono id">ID: {{ link.id }}</p>
+            <form [formGroup]="connectionForm" (ngSubmit)="applyConnection()">
+              <label>Tipo
+                <select formControlName="type">
+                  @for (option of connectionTypes; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                </select>
+              </label>
+              <div class="pair">
+                <label>Distancia (m) <input type="number" step="0.01" min="0.01" formControlName="distanceMeters" class="mono" /></label>
+                <label>Peso <input type="number" step="0.01" min="0.01" formControlName="weight" class="mono" /></label>
+              </div>
+              <label>Accesibilidad
+                <select formControlName="accessibility">
+                  <option value="UNKNOWN">Sin clasificar</option>
+                  <option value="ACCESSIBLE">Accesible</option>
+                  <option value="INACCESSIBLE">No accesible</option>
+                </select>
+              </label>
+              <label class="check"><input type="checkbox" formControlName="bidirectional" /> Se puede recorrer en ambos sentidos</label>
+              <button type="submit" class="primary">Aplicar cambios</button>
+              <button type="button" class="outline danger" (click)="editor.deleteSelection()">Eliminar arista</button>
+              <button type="button" (click)="editor.select(null)">Deseleccionar</button>
+            </form>
+          } @else {
+            <h2>Borrador</h2>
+            <dl>
+              <dt>Nodos</dt><dd>{{ editor.graph().nodes.length }}</dd>
+              <dt>Aristas</dt><dd>{{ editor.graph().connections.length }}</dd>
+              <dt>Destinos</dt><dd>{{ editor.graph().destinations.length }}</dd>
+            </dl>
+            <p class="hint">Selecciona un nodo o una arista para editar sus propiedades.</p>
+          }
+        } @else {
+          @if (proposal()) {
+            @if (alerts().length === 0) {
+              <p class="hint">Sin alertas.</p>
+            } @else {
+              <ul class="alerts">
+                @for (message of alerts(); track $index) { <li>⚠ {{ message }}</li> }
+              </ul>
+            }
+          } @else if (graphAlerts().length === 0) {
+            <p class="hint">Sin alertas: el borrador cumple las reglas de publicación.</p>
+          } @else {
+            <ul class="alerts">
+              @for (alert of graphAlerts(); track $index) {
+                <li [class.error]="alert.severity === 'error'">
+                  <button type="button" class="alert-item" (click)="focusAlert(alert)"
+                    [disabled]="!alert.elementId || (alert.elementType !== 'NODE' && alert.elementType !== 'CONNECTION')">
+                    <span aria-hidden="true">{{ alert.severity === 'error' ? '⛔' : '⚠' }}</span> {{ alert.message }}
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </aside>
+    </div>
+  }
+</app-admin-shell>
