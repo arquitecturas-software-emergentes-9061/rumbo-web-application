@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { PlanInterpretation, PlanVersion } from '../floor-plan-calibration/floor-plans.service';
+import { PlanInterpretation } from '../floor-plan-calibration/floor-plans.service';
 
 export interface ModelDoor { id: string; x1: number; y1: number; x2: number; y2: number }
 
@@ -9,11 +9,6 @@ export type ModelProposal = NonNullable<PlanInterpretation['proposal']> & { door
 export interface ViewBox { x: number; y: number; width: number; height: number }
 
 export interface ProposalSummary { zones: number; nodes: number; connections: number; walls: number; doors: number }
-
-/** Only vector SVG can be interpreted; PDF and raster plans stay preview-only. */
-export function isSvgVersion(version: Pick<PlanVersion, 'mediaType' | 'fileName'> | null): boolean {
-  return !!version && (/svg/i.test(version.mediaType) || /\.svg$/i.test(version.fileName));
-}
 
 export function summarize(proposal: ModelProposal): ProposalSummary {
   return {

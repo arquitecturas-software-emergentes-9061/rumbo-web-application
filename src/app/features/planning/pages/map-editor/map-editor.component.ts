@@ -17,7 +17,7 @@ import { GraphAlert, countErrors } from './graph-validation';
 import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from './map-editor-api.service';
 import {
   ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeDraftLoadError, describeGenerationError, isEmptyProposal,
-  isSvgVersion, isUnlabeled, isolatedZones, nodeLabel, summarize, unlabeledZones, viewBoxFor, zoneFill
+  isUnlabeled, isolatedZones, nodeLabel, summarize, unlabeledZones, viewBoxFor, zoneFill
 } from './model-preview';
 
 type PanelTab = 'properties' | 'alerts';
@@ -104,13 +104,10 @@ export class MapEditorComponent implements OnInit {
   readonly site = computed(() => this.sites().find(item => item.id === this.siteId()) ?? null);
   readonly floor = computed(() => this.floors().find(item => item.id === this.floorId()) ?? null);
   readonly version = computed(() => this.versions().find(item => item.id === this.versionId()) ?? null);
-  readonly canGenerate = computed(() => isSvgVersion(this.version()) && !this.generating());
+  readonly canGenerate = computed(() => this.version() !== null && !this.generating());
   readonly blockedReason = computed(() => {
     if (!this.floorId()) return 'Selecciona un piso.';
     if (this.versions().length === 0) return 'Este piso aún no tiene un plano. Cárgalo en Mapas.';
-    if (!isSvgVersion(this.version())) {
-      return 'Solo se puede generar el modelo desde un plano SVG vectorial. Este formato permite vista previa y calibración.';
-    }
     return null;
   });
   readonly summary = computed(() => (this.proposal() ? summarize(this.proposal() as ModelProposal) : null));
@@ -299,7 +296,7 @@ export class MapEditorComponent implements OnInit {
       next: result => {
         if (result.processing !== 'SVG_CANDIDATES' || !result.proposal) {
           this.resetPreview();
-          this.notice.set('Este plano solo permite vista previa. Carga un SVG vectorial anotado para generar el modelo.');
+          this.notice.set('Este plano solo permite vista previa: no se pudo reconocer su geometría. Usa un SVG anotado o un PDF o imagen nítidos, y comprueba que el servicio de reconocimiento esté activo.');
           return;
         }
         if (isEmptyProposal(result.proposal)) {
