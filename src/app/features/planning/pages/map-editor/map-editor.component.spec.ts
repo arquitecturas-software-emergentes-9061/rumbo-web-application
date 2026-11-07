@@ -40,6 +40,7 @@ describe('MapEditorComponent', () => {
     const fixture = TestBed.createComponent(MapEditorComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    return fixture;
   };
 
   beforeEach(() => {
@@ -68,6 +69,24 @@ describe('MapEditorComponent', () => {
     component.generate();
     expect(plans.interpret).toHaveBeenCalledWith('site', 'floor', 'v1');
     expect(component.proposal()).not.toBeNull();
+  });
+
+  it('renders actual room boundaries and holes instead of their bounding rectangles', () => {
+    const polygon = { outer: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 60 }, { x: 0, y: 60 }],
+      holes: [[{ x: 5, y: 5 }, { x: 10, y: 5 }, { x: 10, y: 10 }]] };
+    plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal,
+      zones: [{ ...proposal.zones[0], polygon, labelPosition: { x: 10, y: 40 } }],
+      barriers: [{ kind: 'WINDOW', polygon }]
+    } })));
+    const fixture = create([svg]);
+    component.generate();
+    fixture.detectChanges();
+    const path = fixture.nativeElement.querySelector('svg.plan path.zone');
+    expect(path.getAttribute('fill-rule')).toBe('evenodd');
+    expect(path.getAttribute('d').match(/M /g)).toHaveLength(2);
+    expect(fixture.nativeElement.querySelector('svg.plan rect.zone')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.zone-label').getAttribute('y')).toBe('40');
+    expect(fixture.nativeElement.querySelector('path.barrier.window')).not.toBeNull();
   });
 
   it('explains when the floor has no plan', () => {
@@ -373,7 +392,7 @@ describe('MapEditorComponent', () => {
     ];
     const richProposal = (): ModelProposal => ({
       ...proposal, zones: rooms, warnings: [],
-      nodes: rooms.map((zone, index) => ({ id: zone.id, label: zone.name, x: index * 10, y: 5 })),
+      nodes: rooms.map(zone => ({ id: zone.id, label: zone.name, x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 })),
       connections: [{ id: 'k', fromNodeId: 'zone-0', toNodeId: 'zone-2', distanceUnits: 10 }],
       doors: [{ id: 'door-0', x1: 5, y1: 10, x2: 5, y2: 12 }]
     });

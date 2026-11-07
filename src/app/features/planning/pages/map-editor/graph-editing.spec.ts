@@ -108,6 +108,20 @@ describe('graph editing operations', () => {
 });
 
 describe('classified zones when applying a proposal', () => {
+  it('preserves structural entrances and corridor types without snapping a door onto an existing destination', () => {
+    const proposal = {
+      zones: [], wallCandidates: [], warnings: [],
+      nodes: [{ id: 'entry', role: 'ENTRANCE', label: 'Entrada', x: 20.5, y: 0.5 },
+        { id: 'door', role: 'DOOR', label: 'Puerta', x: 21, y: 1 }],
+      connections: [{ id: 'link', fromNodeId: 'entry', toNodeId: 'door', kind: 'CORRIDOR', distanceUnits: 1, bidirectional: false }]
+    };
+    let counter = 0;
+    const graph = applyProposal(build(), proposal, plan, () => `id-${++counter}`);
+    expect(graph.nodes.filter(node => node.type === 'ACCESS')).toHaveLength(1);
+    expect(graph.nodes).toHaveLength(3);
+    expect(graph.nodes.find(node => node.type === 'ACCESS')).toMatchObject({ x: 20.5, y: 0.5 });
+    expect(graph.connections).toEqual([expect.objectContaining({ type: 'CORRIDOR', bidirectional: false })]);
+  });
   const zone = (id: string, name: string, category: string) => ({ id, name, category, x: 0, y: 0, width: 10, height: 10 });
   const run = (zones: ReturnType<typeof zone>[]) => {
     let counter = 0;

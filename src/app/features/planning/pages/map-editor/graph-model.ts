@@ -175,11 +175,15 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
   const zoneById = new Map(proposal.zones.map(zone => [zone.id, zone]));
   for (const node of proposal.nodes) {
     const point = clampPoint(plan, node.x, node.y);
-    const near = destinationNodes.find(existing => Math.hypot(existing.x - point.x, existing.y - point.y) <= snap);
+    // Structural roles distinguish an entrance/door from a destination at nearby coordinates.
+    // Preserve exact generated route geometry; proximity-only reconciliation is legacy behavior.
+    const near = destinationNodes.find(existing => node.role == null
+      ? Math.hypot(existing.x - point.x, existing.y - point.y) <= snap
+      : node.role === 'ROOM' && Math.hypot(existing.x - point.x, existing.y - point.y) <= 1e-6);
     if (near) { ids.set(node.id, near.id); continue; }
     const id = newId();
     const zone = zoneById.get(node.id);
-    const type = nodeTypeFor(zone);
+    const type = node.role === 'ENTRANCE' ? 'ACCESS' : nodeTypeFor(zone);
     ids.set(node.id, id);
     created.push({ id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...point, type });
     if (type === 'DESTINATION' && zone) {
@@ -198,8 +202,8 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
     linked.add(key);
     const meters = distanceMeters(byId.get(source) as GraphNode, byId.get(target) as GraphNode, plan);
     connections.push({
-      id: newId(), sourceNodeId: source, targetNodeId: target, type: 'DOORWAY', distanceMeters: meters, weight: meters,
-      verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true
+      id: newId(), sourceNodeId: source, targetNodeId: target, type: link.kind === 'CORRIDOR' ? 'CORRIDOR' : 'DOORWAY', distanceMeters: meters, weight: meters,
+      verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: link.bidirectional ?? true
     });
   }
   return { nodes: all, connections, destinations };

@@ -17,6 +17,14 @@ export interface Point {
   y: number;
 }
 
+export interface PlanPolygon { outer: Point[]; holes: Point[][] }
+export interface ModelZone {
+  id: string; name: string; category: string; x: number; y: number; width: number; height: number;
+  polygon?: PlanPolygon | null;
+  labelPosition?: Point | null;
+}
+export interface ModelBarrier { kind: 'WALL' | 'WINDOW' | 'OBSTACLE'; polygon: PlanPolygon }
+
 export interface CalibrationInput {
   floorId: string;
   unit: 'METERS' | 'CENTIMETERS';
@@ -40,10 +48,12 @@ export interface PlanInterpretation {
   scaleStatus: 'PROVISIONAL' | 'CONFIRMED';
   metersPerUnit: number | null;
   proposal: {
-    zones: { id: string; name: string; category: string; x: number; y: number; width: number; height: number }[];
-    nodes: (Point & { id: string; label: string })[];
-    connections: { id: string; fromNodeId: string; toNodeId: string; distanceUnits: number }[];
+    zones: ModelZone[];
+    nodes: (Point & { id: string; label: string; role?: string })[];
+    connections: { id: string; fromNodeId: string; toNodeId: string; distanceUnits: number; kind?: string; bidirectional?: boolean }[];
     wallCandidates: { x1: number; y1: number; x2: number; y2: number }[];
+    barriers?: ModelBarrier[];
+    walkable?: PlanPolygon[];
     warnings: string[];
   } | null;
 }

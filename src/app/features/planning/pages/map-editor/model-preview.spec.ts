@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { categoryLabel, correctZone, isolatedZones, describeDraftLoadError, describeGenerationError, isEmptyProposal, isUnlabeled, summarize, viewBoxFor, zoneFill } from './model-preview';
+import { categoryLabel, correctZone, isolatedZones, describeDraftLoadError, describeGenerationError, isEmptyProposal, isUnlabeled, polygonPath, summarize, viewBoxFor, zoneFill, zonePath } from './model-preview';
 
 const proposal = {
   zones: [{ id: 'z1', name: 'Consultorio 101', category: 'ROOM', x: 0, y: 0, width: 100, height: 60 }],
@@ -26,6 +26,22 @@ describe('model preview helpers', () => {
     expect(zoneFill('CORRIDOR')).toBe('#e8e8e8');
     expect(zoneFill('ELEVATOR')).toBe('#dfe7f3');
     expect(zoneFill('ROOM')).toBe('#d9eaf3');
+  });
+
+  it('preserves holes and nonrectangular vertices and falls back for older API responses', () => {
+    const polygon = { outer: [{ x: 0, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 80 }, { x: 0, y: 80 }],
+      holes: [[{ x: 5, y: 5 }, { x: 10, y: 5 }, { x: 10, y: 10 }]] };
+    expect(zonePath({ ...proposal.zones[0], polygon })).toContain('80 20 L 20 20 L 20 80');
+    expect(polygonPath(polygon).match(/M /g)).toHaveLength(2);
+    expect(zonePath(proposal.zones[0])).toBe('M 0 0 L 100 0 L 100 60 L 0 60 Z');
+    const corrected = correctZone({ ...proposal, zones: [{ ...proposal.zones[0], polygon }] }, 'z1', { name: 'Triaje' });
+    expect(corrected.zones[0].polygon).toEqual(polygon);
+  });
+
+  it('includes structural polygons outside legacy bounding boxes in the viewport', () => {
+    const polygon = { outer: [{ x: 200, y: 20 }, { x: 220, y: 20 }, { x: 220, y: 30 }], holes: [] };
+    const bounds = viewBoxFor({ ...proposal, barriers: [{ kind: 'OBSTACLE', polygon }] }, 0);
+    expect(bounds.width).toBe(220);
   });
 
   it('explains generation failures', () => {
@@ -74,6 +90,19 @@ describe('model preview helpers', () => {
     const linked = { ...proposal, zones, connections: [{ id: 'k', fromNodeId: 'a', toNodeId: 'b', distanceUnits: 5 }] };
     expect(isolatedZones(linked).map(zone => zone.id)).toEqual(['c']);
     expect(isolatedZones({ ...linked, connections: [] })).toHaveLength(3);
+  });
+
+  it('counts a generated corridor as reached when linked skeleton nodes run through it', () => {
+    const corridor = { id: 'hall', name: 'CORRIDOR 1', category: 'CORRIDOR', x: 0, y: 0, width: 100, height: 100,
+      polygon: { outer: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 100 }, { x: 0, y: 100 }],
+        holes: [[{ x: 2, y: 2 }, { x: 8, y: 2 }, { x: 8, y: 8 }, { x: 2, y: 8 }]] } };
+    const nodes = [{ id: 'n1', label: '', x: 50, y: 10 }, { id: 'n2', label: '', x: 10, y: 50 }];
+    const reached = { ...proposal, zones: [corridor], nodes, connections: [{ id: 'k', fromNodeId: 'n1', toNodeId: 'n2', distanceUnits: 5 }] };
+    expect(isolatedZones(reached)).toEqual([]);
+    // Inside the bounding box but outside the L-shaped boundary, or inside a hole, does not count.
+    const outside = { ...reached, nodes: [{ id: 'n1', label: '', x: 60, y: 60 }, { id: 'n2', label: '', x: 5, y: 5 }] };
+    expect(isolatedZones(outside).map(zone => zone.id)).toEqual(['hall']);
+    expect(isolatedZones({ ...reached, connections: [] }).map(zone => zone.id)).toEqual(['hall']);
   });
 
   it('names categories in Spanish and keeps unknown ones as they are', () => {

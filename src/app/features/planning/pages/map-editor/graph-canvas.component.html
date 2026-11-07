@@ -8,13 +8,20 @@
     @if (backdrop(); as context) {
       <g class="backdrop" aria-hidden="true">
         @for (zone of context.zones; track zone.id) {
-          <rect [attr.x]="zone.x" [attr.y]="zone.y" [attr.width]="zone.width" [attr.height]="zone.height"
+          <path class="zone" [attr.d]="zonePath(zone)" fill-rule="evenodd"
             [attr.fill]="fill(zone.category)" [attr.stroke-width]="unit()" />
-          <text [attr.x]="zone.x + zone.width / 2" [attr.y]="zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
+          <text [attr.x]="zone.labelPosition?.x ?? zone.x + zone.width / 2" [attr.y]="zone.labelPosition?.y ?? zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
             text-anchor="middle">{{ zone.name }}</text>
         }
-        @for (wall of context.wallCandidates; track $index) {
-          <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+        @if (context.barriers?.length) {
+          @for (barrier of context.barriers; track $index) {
+            <path class="barrier" [class.window]="barrier.kind === 'WINDOW'" [class.obstacle]="barrier.kind === 'OBSTACLE'"
+              [attr.d]="polygonPath(barrier.polygon)" fill-rule="evenodd" />
+          }
+        } @else {
+          @for (wall of context.wallCandidates; track $index) {
+            <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+          }
         }
         @for (door of context.doors ?? []; track door.id) {
           <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2" [attr.stroke-width]="unit() * 3" />
