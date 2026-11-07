@@ -31,6 +31,7 @@ export class LoginComponent {
   get sessionNotice(): string | null {
     const reason = this.route.snapshot.queryParams['reason'];
     if (reason === 'session-expired') return 'Tu sesión venció. Inicia sesión de nuevo.';
+    if (reason === 'account-created') return 'Cuenta creada. Inicia sesión para continuar.';
     if (reason === 'sign-out-unconfirmed') return 'Cerraste la sesión en este navegador. El servidor no confirmó la revocación.';
     return null;
   }

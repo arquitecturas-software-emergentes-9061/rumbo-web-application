@@ -3,6 +3,15 @@ export interface SignInRequest {
   password: string;
 }
 
+export interface SignUpRequest {
+  email: string;
+  password: string;
+  role: 'CLINIC_ADMIN';
+  fullName: string;
+  clinicName: string;
+  acceptedTerms: boolean;
+}
+
 export interface AuthenticatedUserResponse {
   userId: string;
   role: string;

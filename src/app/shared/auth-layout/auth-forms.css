@@ -100,3 +100,8 @@
 @media (prefers-reduced-motion: reduce) { .auth-screen .spinner { animation: none; } }
 
 @media (max-width: 720px) { .auth-screen h1 { font-size: 1.55rem; } }
+.auth-screen .checkbox-row { display: flex; align-items: flex-start; gap: 10px; font-size: .88rem; line-height: 1.4; cursor: pointer; }
+.auth-screen .checkbox-row input { flex: none; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--primary); }
+.auth-screen .auth-switch { margin: 0 0 14px; text-align: center; font-size: .9rem; color: var(--muted); }
+.auth-screen .auth-switch a { color: var(--ink); font-weight: 600; text-underline-offset: 3px; }
+.auth-screen .field-error a { color: inherit; font-weight: 600; text-underline-offset: 3px; }

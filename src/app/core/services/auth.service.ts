@@ -3,7 +3,7 @@ import { HttpBackend, HttpClient, HttpErrorResponse } from '@angular/common/http
 import { Router } from '@angular/router';
 import { Observable, catchError, finalize, map, of, shareReplay, switchMap, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AuthenticatedUserResponse, AuthSession, SignInRequest, UserAccountResponse } from '../models/auth.model';
+import { AuthenticatedUserResponse, AuthSession, SignInRequest, SignUpRequest, UserAccountResponse } from '../models/auth.model';
 
 const STORAGE_KEY = 'rumbo_auth_session';
 
@@ -23,6 +23,11 @@ export class AuthService {
   readonly currentUserId = computed(() => this.isAuthenticated() ? this.sessionSignal()!.userId : null);
   readonly currentRole = computed(() => this.isAuthenticated() ? this.sessionSignal()!.role : null);
   readonly currentClinicId = computed(() => this.isAuthenticated() ? this.sessionSignal()!.clinicId : null);
+
+  /** Registers a clinic administrator. It opens no session: the user signs in afterwards. */
+  signUp(request: SignUpRequest): Observable<UserAccountResponse> {
+    return this.http.post<UserAccountResponse>(`${environment.apiUrl}/auth/sign-up`, request);
+  }
 
   signIn(credentials: SignInRequest): Observable<AuthenticatedUserResponse> {
     this.clearSession();

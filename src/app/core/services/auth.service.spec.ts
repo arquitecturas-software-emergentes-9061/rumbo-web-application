@@ -24,6 +24,19 @@ describe('AuthService verified IAM lifecycle', () => {
     verify();
   };
 
+  it('signs a clinic administrator up without opening a session', () => {
+    const request = { email: 'a@b.pe', password: 'Rumbo2026', role: 'CLINIC_ADMIN' as const, fullName: 'A B',
+      clinicName: 'C', acceptedTerms: true };
+    let created: unknown;
+    service.signUp(request).subscribe(value => created = value);
+    const call = http.expectOne(url('/auth/sign-up'));
+    expect(call.request.method).toBe('POST');
+    expect(call.request.body).toEqual(request);
+    call.flush(account);
+    expect(created).toEqual(account);
+    expect(service.session()).toBeNull();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
