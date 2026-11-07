@@ -16,7 +16,7 @@ import {
 import { GraphAlert, countErrors } from './graph-validation';
 import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from './map-editor-api.service';
 import {
-  ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeDraftLoadError, describeGenerationError, isEmptyProposal,
+  ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeCreateDraftError, describeDraftLoadError, describeGenerationError, isEmptyProposal,
   isUnlabeled, isolatedZones, nodeLabel, summarize, unlabeledZones, viewBoxFor, zoneFill
 } from './model-preview';
 
@@ -73,6 +73,7 @@ export class MapEditorComponent implements OnInit {
 
   readonly draft = signal<DraftSnapshot | null>(null);
   readonly draftLoading = signal(false);
+  readonly creatingDraft = signal(false);
   readonly saving = signal(false);
   readonly saveFailure = signal<SaveFailure | null>(null);
   readonly serverAlerts = signal<GraphAlert[]>([]);
@@ -145,7 +146,10 @@ export class MapEditorComponent implements OnInit {
   });
   readonly graphErrorCount = computed(() => countErrors(this.graphAlerts()));
   readonly canSave = computed(() => !!this.draft() && this.editor.dirty() && !this.saving());
-  readonly canApply = computed(() => !!this.draft() && !!this.proposal() && !!this.editor.plan());
+  /** A site without any map can start its first draft from the plan selected for the current floor. */
+  readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
+    && !!this.siteId() && !!this.floorId() && !!this.versionId());
+  readonly canApply = computed(() => !!this.proposal() && (this.draft() ? !!this.editor.plan() : this.canCreateDraft()));
   readonly proposalScaleBlocks = computed(() => this.editor.plan() !== null && this.editor.plan()?.metersPerUnit === null);
   readonly toolHint = computed(() => this.tools.find(item => item.id === this.editor.tool())?.hint ?? '');
   readonly selectedKindLabel = computed(() => this.editor.selectedNode() ? 'nodo' : this.editor.selectedConnection() ? 'arista' : null);
@@ -274,6 +278,35 @@ export class MapEditorComponent implements OnInit {
     });
   }
 
+  createDraft(afterCreated?: () => void): void {
+    const siteId = this.siteId(), floorId = this.floorId(), versionId = this.versionId();
+    if (!siteId || !floorId || !versionId || !this.canCreateDraft()) return;
+    this.creatingDraft.set(true);
+    this.error.set(null);
+    this.notice.set(null);
+    this.success.set(null);
+    this.draftApi.createFirstDraft(siteId, [{ floorId, planVersionId: versionId }]).pipe(
+      takeUntilDestroyed(this.destroyRef),
+      finalize(() => this.creatingDraft.set(false))
+    ).subscribe({
+      next: snapshot => {
+        this.draft.set(snapshot);
+        this.editor.load(snapshot.graph, snapshot.plans);
+        this.editor.floorId.set(floorId);
+        this.success.set('Borrador creado a partir del plano seleccionado. Ya puedes editar el mapa y guardarlo.');
+        afterCreated?.();
+      },
+      error: (error: HttpErrorResponse) => {
+        if (error.error?.code === 'DRAFT_ALREADY_EXISTS') {
+          this.notice.set('La sede ya tenía un borrador: se cargó el existente.');
+          this.loadDraft(siteId);
+          return;
+        }
+        this.error.set(describeCreateDraftError(error));
+      }
+    });
+  }
+
   reloadDraft(): void {
     const siteId = this.siteId();
     if (!siteId) return;
@@ -321,7 +354,7 @@ export class MapEditorComponent implements OnInit {
   applyProposal(): void {
     const current = this.proposal();
     if (!current) return;
-    if (!this.draft()) { this.notice.set('La sede aún no tiene un borrador: la propuesta se queda como vista previa.'); return; }
+    if (!this.draft()) { this.createDraft(() => this.applyProposal()); return; }
     if (!this.editor.applyGenerated(current)) {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;

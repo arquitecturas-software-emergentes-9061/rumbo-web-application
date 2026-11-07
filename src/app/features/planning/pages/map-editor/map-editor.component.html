@@ -100,7 +100,7 @@
             <span>Propuesta generada desde el plano. No se guardó nada.</span>
             <span class="actions">
               <button type="button" class="primary" [disabled]="!canApply()" (click)="applyProposal()"
-                [title]="draft() ? '' : 'La sede aún no tiene un borrador'">Aplicar al borrador</button>
+                [title]="draft() ? '' : 'Se creará el borrador de la sede con este plano'">Aplicar al borrador</button>
               <button type="button" class="outline" (click)="discardProposal()">Descartar</button>
             </span>
           </div>
@@ -148,7 +148,11 @@
         } @else if (!draft()) {
           <div class="empty">
             <p><strong>Esta sede aún no tiene un borrador de mapa.</strong></p>
-            <p>El editor trabaja sobre el borrador vigente. Puedes generar una vista previa desde un plano SVG anotado; para guardarla hace falta un borrador.</p>
+            <p>Créalo a partir del plano seleccionado para poder editar el mapa y guardarlo. También puedes generar el modelo y aplicarlo: el borrador se crea al aplicarlo.</p>
+            <button type="button" class="primary" [disabled]="!canCreateDraft()" (click)="createDraft()">
+              {{ creatingDraft() ? 'Creando borrador…' : 'Crear borrador' }}
+            </button>
+            @if (!versionId()) { <p class="hint">Selecciona un piso con un plano cargado para crear el borrador.</p> }
           </div>
         } @else {
           <p class="hint tool-hint" role="status">{{ editor.feedback() ?? toolHint() }}</p>
