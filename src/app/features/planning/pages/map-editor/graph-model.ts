@@ -136,6 +136,21 @@ export function upsertDestination(graph: EditorGraph, nodeId: string, input: Des
   };
 }
 
+const GENERATED_NAME = /^(ROOM|CORRIDOR|SERVICE) \d+$/;
+
+/**
+ * Turns a classified zone into a node type: labeled rooms and services become destinations,
+ * elevators and stairs become vertical links, and everything else is a plain intersection.
+ * Zones still carrying a generated name stay intersections so the directory is not polluted.
+ */
+export function nodeTypeFor(zone: ModelProposal['zones'][number] | undefined): NodeType {
+  if (!zone) return 'INTERSECTION';
+  const category = zone.category.toUpperCase();
+  if (category === 'ELEVATOR' || category === 'STAIRS') return 'VERTICAL_LINK';
+  if ((category === 'ROOM' || category === 'SERVICE') && !GENERATED_NAME.test(zone.name.trim())) return 'DESTINATION';
+  return 'INTERSECTION';
+}
+
 /**
  * Replaces the generated part of one floor with the proposal while keeping its destinations: every
  * DESTINATION node and its directory entry survive, and a proposal node that lands next to one reuses
@@ -156,13 +171,20 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
   const snap = Math.max(plan.widthUnits, plan.heightUnits) * 0.02;
   const ids = new Map<string, string>();
   const created: GraphNode[] = [];
+  const destinations = [...kept.destinations];
+  const zoneById = new Map(proposal.zones.map(zone => [zone.id, zone]));
   for (const node of proposal.nodes) {
     const point = clampPoint(plan, node.x, node.y);
     const near = destinationNodes.find(existing => Math.hypot(existing.x - point.x, existing.y - point.y) <= snap);
     if (near) { ids.set(node.id, near.id); continue; }
     const id = newId();
+    const zone = zoneById.get(node.id);
+    const type = nodeTypeFor(zone);
     ids.set(node.id, id);
-    created.push({ id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...point, type: 'INTERSECTION' });
+    created.push({ id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...point, type });
+    if (type === 'DESTINATION' && zone) {
+      destinations.push({ id: newId(), nodeId: id, type: 'SERVICE', name: zone.name, specialty: null });
+    }
   }
   const all = [...kept.nodes, ...created];
   const byId = new Map(all.map(node => [node.id, node]));
@@ -180,5 +202,5 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
       verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true
     });
   }
-  return { nodes: all, connections, destinations: kept.destinations };
+  return { nodes: all, connections, destinations };
 }

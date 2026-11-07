@@ -16,6 +16,9 @@
         @for (wall of context.wallCandidates; track $index) {
           <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
         }
+        @for (door of context.doors ?? []; track door.id) {
+          <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2" [attr.stroke-width]="unit() * 3" />
+        }
       </g>
     }
     @for (line of lines(); track line.connection.id) {

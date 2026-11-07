@@ -1,5 +1,5 @@
 import {
-  EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, removeConnection,
+  nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, removeConnection,
   removeNode, updateConnection, updateNodeType, upsertDestination
 } from './graph-model';
 import { countErrors, fromServerIssues, validateGraph } from './graph-validation';
@@ -104,6 +104,41 @@ describe('graph editing operations', () => {
     expect(next.connections).toHaveLength(1);
     expect(next.connections[0]).toMatchObject({ sourceNodeId: 'c', type: 'DOORWAY' });
     expect(next.destinations[0].nodeId).toBe('c');
+  });
+});
+
+describe('classified zones when applying a proposal', () => {
+  const zone = (id: string, name: string, category: string) => ({ id, name, category, x: 0, y: 0, width: 10, height: 10 });
+  const run = (zones: ReturnType<typeof zone>[]) => {
+    let counter = 0;
+    const proposal = {
+      zones, wallCandidates: [], warnings: [], connections: [],
+      nodes: zones.map((item, index) => ({ id: item.id, label: item.name, x: 10 + index * 20, y: 10 }))
+    };
+    return applyProposal(EMPTY_GRAPH, proposal, plan, () => `id-${++counter}`);
+  };
+
+  it('types nodes from the zone classification', () => {
+    expect(nodeTypeFor(zone('a', 'Consultorio 101', 'ROOM'))).toBe('DESTINATION');
+    expect(nodeTypeFor(zone('a', 'Farmacia', 'SERVICE'))).toBe('DESTINATION');
+    expect(nodeTypeFor(zone('a', 'Pasillo A', 'CORRIDOR'))).toBe('INTERSECTION');
+    expect(nodeTypeFor(zone('a', 'Ascensor A', 'ELEVATOR'))).toBe('VERTICAL_LINK');
+    expect(nodeTypeFor(zone('a', 'Escalera B', 'STAIRS'))).toBe('VERTICAL_LINK');
+    expect(nodeTypeFor(zone('a', 'ROOM 2', 'ROOM'))).toBe('INTERSECTION');
+    expect(nodeTypeFor(undefined)).toBe('INTERSECTION');
+  });
+
+  it('creates destinations with their directory entry only for labeled rooms and services', () => {
+    const graph = run([zone('r', 'Consultorio 101', 'ROOM'), zone('p', 'Pasillo A', 'CORRIDOR'), zone('u', 'ROOM 3', 'ROOM'), zone('e', 'Ascensor A', 'ELEVATOR')]);
+    expect(graph.nodes.map(node => node.type)).toEqual(['DESTINATION', 'INTERSECTION', 'INTERSECTION', 'VERTICAL_LINK']);
+    expect(graph.destinations).toEqual([{ id: 'id-2', nodeId: 'id-1', type: 'SERVICE', name: 'Consultorio 101', specialty: null }]);
+  });
+
+  it('a manual correction changes the node type the draft receives', () => {
+    const before = run([zone('u', 'ROOM 3', 'ROOM')]);
+    const after = run([zone('u', 'Triaje', 'ROOM')]);
+    expect(before.destinations).toEqual([]);
+    expect(after.destinations[0]).toMatchObject({ name: 'Triaje' });
   });
 });
 

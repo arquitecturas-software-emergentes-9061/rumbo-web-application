@@ -107,7 +107,7 @@
           <svg class="plan" [attr.viewBox]="viewBox()" preserveAspectRatio="xMidYMid meet" role="img"
             [attr.aria-label]="'Modelo propuesto con ' + current.zones.length + ' ambientes y ' + current.nodes.length + ' nodos'">
             @for (zone of current.zones; track zone.id) {
-              <rect class="zone" [class.selected]="zone.id === selectedZoneId()" [class.unlabeled]="unlabeledZone(zone)"
+              <rect class="zone" [class.selected]="zone.id === selectedZoneId()" [class.unlabeled]="unlabeledZone(zone)" [class.isolated]="isIsolated(zone.id)"
                 [attr.x]="zone.x" [attr.y]="zone.y" [attr.width]="zone.width" [attr.height]="zone.height"
                 [attr.fill]="fill(zone.category)" [attr.stroke-width]="strokeUnit() * 1.5" tabindex="0" role="button"
                 [attr.aria-label]="'Ambiente ' + zone.name + (unlabeledZone(zone) ? ' sin etiqueta confiable' : '')"
@@ -119,9 +119,13 @@
               <line class="wall" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
                 [attr.stroke-width]="strokeUnit() * 2.2" />
             }
+            @for (door of current.doors ?? []; track door.id) {
+              <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2"
+                [attr.stroke-width]="strokeUnit() * 3.2"><title>Puerta {{ door.id }}</title></line>
+            }
             @for (connection of current.connections; track connection.id) {
               @if (connectionLine(connection); as line) {
-                <line class="edge" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+                <line class="edge" [class.selected]="connection.id === selectedLinkId()" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
                   [attr.stroke-width]="strokeUnit() * 2" />
               }
             }
@@ -135,7 +139,9 @@
             <li><span class="swatch edge-s"></span>Arista</li>
             <li><span class="swatch wall-s"></span>Muro</li>
             <li><span class="swatch zone-s"></span>Ambiente</li>
+            <li><span class="swatch door-s"></span>Puerta</li>
             <li><span class="swatch unlabeled-s"></span>Sin etiqueta</li>
+            <li><span class="swatch isolated-s"></span>Sin conexión</li>
           </ul>
         } @else if (draftLoading()) {
           <p role="status" class="empty">Cargando el borrador de la sede…</p>
@@ -177,16 +183,28 @@
         @if (tab() === 'properties') {
           @if (proposal()) {
             @if (selectedZone(); as zone) {
-              <h2>Propiedades del ambiente</h2>
-              <dl>
-                <dt>Nombre</dt><dd>{{ zone.name }}</dd>
-                <dt>Tipo</dt><dd>{{ zone.category }}</dd>
-                <dt>Identificador</dt><dd class="mono">{{ zone.id }}</dd>
-              </dl>
+              <h2>Ambiente reconocido</h2>
+              <p class="mono id">ID: {{ zone.id }}</p>
+              <form [formGroup]="zoneForm" (ngSubmit)="applyZoneCorrection()">
+                <label>Nombre
+                  <input formControlName="name" maxlength="150" />
+                  @if (zoneForm.controls.name.touched && zoneForm.controls.name.invalid) { <small class="field-error">Obligatorio.</small> }
+                </label>
+                <label>Tipo de ambiente
+                  <select formControlName="category">
+                    @for (option of zoneCategories; track option.value) { <option [value]="option.value">{{ option.label }}</option> }
+                  </select>
+                </label>
+                <button type="submit" class="primary">Aplicar corrección</button>
+                <button type="button" class="outline" (click)="resetZone()">Restablecer lo reconocido</button>
+              </form>
               @if (unlabeledZone(zone)) {
-                <p class="warn-box">Este ambiente no tiene una etiqueta confiable en el plano. Confirma su nombre y tipo antes de publicar.</p>
+                <p class="warn-box">Este ambiente no tiene una etiqueta confiable en el plano. Escribe su nombre y confirma su tipo.</p>
               }
-              <p class="hint">Aplica la propuesta al borrador para poder editar sus elementos.</p>
+              @if (isIsolated(zone.id)) {
+                <p class="warn-box">Ninguna conexión reconocida llega a este ambiente.</p>
+              }
+              <p class="hint">Al aplicar la propuesta, los consultorios y servicios con nombre se crean como destinos, y los ascensores y escaleras como conexiones verticales.</p>
             } @else if (summary(); as counts) {
               <h2>Resumen de la propuesta</h2>
               <dl>
@@ -195,8 +213,29 @@
                 <dt>Nodos</dt><dd>{{ counts.nodes }}</dd>
                 <dt>Conexiones</dt><dd>{{ counts.connections }}</dd>
                 <dt>Muros candidatos</dt><dd>{{ counts.walls }}</dd>
+                <dt>Puertas</dt><dd>{{ counts.doors }}</dd>
+                <dt>Sin conexión</dt><dd>{{ isolated().length }}</dd>
               </dl>
-              <p class="hint">Selecciona un ambiente del plano para ver sus propiedades.</p>
+              <h3>Ambientes</h3>
+              <ul class="items">
+                @for (zone of proposal()?.zones ?? []; track zone.id) {
+                  <li><button type="button" (click)="selectZone(zone.id)">
+                    <span>{{ zone.name }}</span><small>{{ categoryName(zone.category) }}{{ isIsolated(zone.id) ? ' · sin conexión' : '' }}</small>
+                  </button></li>
+                }
+              </ul>
+              <h3>Red de recorridos</h3>
+              @if ((proposal()?.connections ?? []).length === 0) {
+                <p class="hint">No se reconoció ninguna conexión entre ambientes.</p>
+              } @else {
+                <ul class="items">
+                  @for (link of proposal()?.connections ?? []; track link.id) {
+                    <li><button type="button" [class.active]="link.id === selectedLinkId()" (click)="selectLink(link.id)">
+                      <span>{{ labelOf(link.fromNodeId) }} ↔ {{ labelOf(link.toNodeId) }}</span><small>{{ link.distanceUnits }} u</small>
+                    </button></li>
+                  }
+                </ul>
+              }
             }
           } @else if (editor.selectedNode(); as node) {
             <h2>Propiedades del nodo</h2>

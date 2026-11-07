@@ -19,3 +19,4 @@
 .backdrop rect { stroke: #3b7fa3; }
 .backdrop line { stroke: #142e44; stroke-linecap: round; }
 .backdrop text { fill: var(--muted); }
+.backdrop .door { stroke: #c77700; }

@@ -16,8 +16,8 @@ import {
 import { GraphAlert, countErrors } from './graph-validation';
 import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from './map-editor-api.service';
 import {
-  ModelProposal, describeDraftLoadError, describeGenerationError, isEmptyProposal, isSvgVersion, isUnlabeled, nodeLabel, summarize, unlabeledZones,
-  viewBoxFor, zoneFill
+  ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeDraftLoadError, describeGenerationError, isEmptyProposal,
+  isSvgVersion, isUnlabeled, isolatedZones, nodeLabel, summarize, unlabeledZones, viewBoxFor, zoneFill
 } from './model-preview';
 
 type PanelTab = 'properties' | 'alerts';
@@ -42,6 +42,7 @@ export class MapEditorComponent implements OnInit {
   readonly nodeTypes = NODE_TYPES;
   readonly connectionTypes = CONNECTION_TYPES;
   readonly destinationTypes = DESTINATION_TYPES;
+  readonly zoneCategories = ZONE_CATEGORIES;
   readonly tools: { id: Tool; label: string; hint: string }[] = [
     { id: 'select', label: 'Seleccionar', hint: 'Elige un nodo o una arista' },
     { id: 'node', label: 'Nodo', hint: 'Haz clic en el plano para agregar un nodo' },
@@ -66,6 +67,9 @@ export class MapEditorComponent implements OnInit {
   readonly scaleProvisional = signal(true);
   readonly tab = signal<PanelTab>('properties');
   readonly selectedZoneId = signal<string | null>(null);
+  readonly selectedLinkId = signal<string | null>(null);
+  /** The proposal exactly as the API returned it, so manual corrections can be reverted. */
+  private readonly generated = signal<ModelProposal | null>(null);
 
   readonly draft = signal<DraftSnapshot | null>(null);
   readonly draftLoading = signal(false);
@@ -75,6 +79,10 @@ export class MapEditorComponent implements OnInit {
   /** Rooms and walls of the last model applied to the draft, kept as read-only context. */
   readonly backdrop = signal<ModelProposal | null>(null);
 
+  readonly zoneForm = this.fb.group({
+    name: ['', [Validators.maxLength(150), (control: AbstractControl) => String(control.value).trim() ? null : { required: true }]],
+    category: ['ROOM']
+  });
   readonly nodeForm = this.fb.group({
     type: this.fb.control<NodeType>('INTERSECTION'),
     x: this.fb.control<number | null>(0, [Validators.required, Validators.min(0)]),
@@ -106,6 +114,7 @@ export class MapEditorComponent implements OnInit {
     return null;
   });
   readonly summary = computed(() => (this.proposal() ? summarize(this.proposal() as ModelProposal) : null));
+  readonly isolated = computed(() => (this.proposal() ? isolatedZones(this.proposal() as ModelProposal) : []));
   readonly unlabeled = computed(() => (this.proposal() ? unlabeledZones(this.proposal() as ModelProposal) : []));
   private readonly box = computed(() => viewBoxFor(this.proposal() ?? EMPTY_PROPOSAL));
   readonly viewBox = computed(() => `${this.box().x} ${this.box().y} ${this.box().width} ${this.box().height}`);
@@ -117,6 +126,10 @@ export class MapEditorComponent implements OnInit {
     const expected = Math.max(current.zones.length - 1, 0);
     if (current.connections.length < expected) {
       list.push(`Se detectaron pocas conexiones (${current.connections.length}) para ${current.zones.length} ambientes. Revisa los recorridos antes de guardar el borrador.`);
+    }
+    const cut = this.isolated();
+    if (cut.length > 0) {
+      list.push(`${cut.length === 1 ? 'Un ambiente queda' : cut.length + ' ambientes quedan'} fuera de la red de recorridos: ${cut.map(zone => zone.name).join(', ')}. Ningún paciente podría llegar a ${cut.length === 1 ? 'él' : 'ellos'}.`);
     }
     const missing = this.unlabeled().length;
     if (missing > 0) {
@@ -145,6 +158,8 @@ export class MapEditorComponent implements OnInit {
       const node = this.editor.selectedNode();
       const entry = this.editor.selectedDestination();
       const link = this.editor.selectedConnection();
+      const zone = this.selectedZone();
+      if (zone) this.zoneForm.reset({ name: zone.name, category: zone.category.toUpperCase() });
       if (node || link) this.tab.set('properties');
       if (node) {
         this.nodeForm.reset({ type: node.type as NodeType, x: node.x, y: node.y });
@@ -293,6 +308,8 @@ export class MapEditorComponent implements OnInit {
           return;
         }
         this.proposal.set(result.proposal);
+        this.generated.set(result.proposal);
+        this.selectedLinkId.set(null);
         this.scaleProvisional.set(result.scaleStatus !== 'CONFIRMED');
         this.selectedZoneId.set(null);
         this.tab.set(result.proposal.warnings.length > 0 || unlabeledZones(result.proposal).length > 0 ? 'alerts' : 'properties');
@@ -319,6 +336,26 @@ export class MapEditorComponent implements OnInit {
   }
 
   discardProposal(): void { this.resetPreview(); this.tab.set('properties'); }
+
+  applyZoneCorrection(): void {
+    const id = this.selectedZoneId(), current = this.proposal();
+    if (!id || !current || this.zoneForm.invalid) return this.zoneForm.markAllAsTouched();
+    const { name, category } = this.zoneForm.getRawValue();
+    this.proposal.set(correctZone(current, id, { name, category }));
+    this.success.set('Ambiente corregido. La corrección se usará al aplicar la propuesta al borrador.');
+  }
+
+  resetZone(): void {
+    const id = this.selectedZoneId(), original = this.generated()?.zones.find(zone => zone.id === id), current = this.proposal();
+    if (!id || !original || !current) return;
+    const restored = correctZone(current, id, { name: original.name, category: original.category });
+    this.proposal.set(restored);
+    this.zoneForm.reset({ name: original.name, category: original.category.toUpperCase() });
+  }
+
+  selectLink(id: string): void { this.selectedLinkId.set(id === this.selectedLinkId() ? null : id); }
+  categoryName(category: string): string { return categoryLabel(category); }
+  isIsolated(zoneId: string): boolean { return this.isolated().some(zone => zone.id === zoneId); }
 
   selectZone(id: string): void {
     this.selectedZoneId.set(id === this.selectedZoneId() ? null : id);
@@ -406,6 +443,8 @@ export class MapEditorComponent implements OnInit {
 
   private resetPreview(): void {
     this.proposal.set(null);
+    this.generated.set(null);
+    this.selectedLinkId.set(null);
     this.selectedZoneId.set(null);
     this.notice.set(null);
   }

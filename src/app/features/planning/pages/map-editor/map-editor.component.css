@@ -89,3 +89,14 @@ dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); } .tools { grid-auto-flow: column; overflow-x: auto; } }
 .editor.no-tools { grid-template-columns: minmax(0, 1fr) 320px; }
 @media (max-width: 1100px) { .editor.no-tools { grid-template-columns: minmax(0, 1fr); } }
+
+.door { stroke: #c77700; stroke-linecap: butt; }
+.zone.isolated { stroke: #9f2629; }
+.edge.selected { stroke: var(--primary); stroke-width: 3; }
+.door-s { height: 4px; background: #c77700; }
+.isolated-s { background: #fff0ef; border: 1px solid #9f2629; }
+h3 { margin: 12px 16px 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.items { list-style: none; margin: 0 16px 8px; padding: 0; display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
+.items button { width: 100%; min-height: 34px; padding: 4px 8px; display: flex; justify-content: space-between; gap: 8px; text-align: left; font-size: .82rem; border: 1px solid var(--line); }
+.items button.active { background: var(--primary-soft); border-color: var(--primary); }
+.items small { color: var(--muted); white-space: nowrap; }

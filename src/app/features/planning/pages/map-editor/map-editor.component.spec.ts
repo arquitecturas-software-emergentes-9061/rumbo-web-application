@@ -6,6 +6,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { SitesService } from '../../../../core/services/sites.service';
 import { FloorPlansService, PlanInterpretation, PlanVersion } from '../floor-plan-calibration/floor-plans.service';
 import { MapEditorComponent } from './map-editor.component';
+import { ModelProposal } from './model-preview';
 import { DraftSnapshot, MapEditorApiService } from './map-editor-api.service';
 import { HttpErrorResponse as HttpError } from '@angular/common/http';
 
@@ -72,7 +73,7 @@ describe('MapEditorComponent', () => {
     plans.interpret.mockReturnValue(of(result()));
     component.generate();
     expect(plans.interpret).toHaveBeenCalledWith('site', 'floor', 'v2');
-    expect(component.summary()).toEqual({ zones: 1, nodes: 2, connections: 1, walls: 1 });
+    expect(component.summary()).toEqual({ zones: 1, nodes: 2, connections: 1, walls: 1, doors: 0 });
     expect(component.tab()).toBe('alerts');
     expect(component.alerts()).toContain('Etiqueta ambigua');
     expect(component.alerts().some(message => message.includes('provisional'))).toBe(true);
@@ -291,6 +292,87 @@ describe('MapEditorComponent', () => {
       component.generate();
       expect(component.unlabeled()).toHaveLength(3);
       expect(component.alerts().some(message => message.includes('3 ambientes no tienen una etiqueta confiable'))).toBe(true);
+    });
+  });
+
+  describe('classification and network', () => {
+    const rooms = [
+      { id: 'zone-0', name: 'Consultorio 101', category: 'ROOM', x: 0, y: 0, width: 10, height: 10 },
+      { id: 'zone-1', name: 'ROOM 2', category: 'ROOM', x: 20, y: 0, width: 10, height: 10 },
+      { id: 'zone-2', name: 'Pasillo A', category: 'CORRIDOR', x: 0, y: 20, width: 30, height: 5 }
+    ];
+    const richProposal = (): ModelProposal => ({
+      ...proposal, zones: rooms, warnings: [],
+      nodes: rooms.map((zone, index) => ({ id: zone.id, label: zone.name, x: index * 10, y: 5 })),
+      connections: [{ id: 'k', fromNodeId: 'zone-0', toNodeId: 'zone-2', distanceUnits: 10 }],
+      doors: [{ id: 'door-0', x1: 5, y1: 10, x2: 5, y2: 12 }]
+    });
+    const withRooms = () => result({ proposal: richProposal() });
+
+    it('counts the recognized doors', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      expect(component.summary()?.doors).toBe(1);
+    });
+
+    it('alerts about rooms that the recognized network does not reach', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      expect(component.isolated().map(zone => zone.id)).toEqual(['zone-1']);
+      expect(component.isIsolated('zone-1')).toBe(true);
+      expect(component.alerts().some(message => message.includes('fuera de la red de recorridos: ROOM 2'))).toBe(true);
+    });
+
+    it('lets the author name an unlabeled room and change its type, then revert it', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      component.selectZone('zone-1');
+      TestBed.tick();
+      expect(component.zoneForm.getRawValue()).toEqual({ name: 'ROOM 2', category: 'ROOM' });
+      component.zoneForm.patchValue({ name: 'Triaje', category: 'SERVICE' });
+      component.applyZoneCorrection();
+      expect(component.proposal()?.zones[1]).toMatchObject({ name: 'Triaje', category: 'SERVICE' });
+      expect(component.unlabeled()).toHaveLength(0);
+      expect(component.success()).toContain('Ambiente corregido');
+      component.resetZone();
+      expect(component.proposal()?.zones[1]).toMatchObject({ name: 'ROOM 2', category: 'ROOM' });
+      expect(component.unlabeled()).toHaveLength(1);
+    });
+
+    it('rejects an empty name for the correction', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      component.selectZone('zone-1');
+      component.zoneForm.patchValue({ name: '   ' });
+      component.applyZoneCorrection();
+      expect(component.proposal()?.zones[1].name).toBe('ROOM 2');
+    });
+
+    it('applies corrected classifications to the draft as destinations', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      component.scaleProvisional.set(false);
+      component.selectZone('zone-1');
+      component.zoneForm.patchValue({ name: 'Triaje', category: 'SERVICE' });
+      component.applyZoneCorrection();
+      component.applyProposal();
+      const names = component.editor.graph().destinations.map(entry => entry.name).sort();
+      expect(names).toEqual(['Consultorio 101', 'Triaje']);
+    });
+
+    it('highlights a connection chosen from the network list and toggles it', () => {
+      create([svg]);
+      plans.interpret.mockReturnValue(of(withRooms()));
+      component.generate();
+      component.selectLink('k');
+      expect(component.selectedLinkId()).toBe('k');
+      component.selectLink('k');
+      expect(component.selectedLinkId()).toBeNull();
     });
   });
 });
