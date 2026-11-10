@@ -1,10 +1,10 @@
 import { Routes } from '@angular/router';
-import { LoginComponent } from './features/auth/pages/login/login.component';
-import { DashboardComponent } from './features/dashboard/pages/dashboard/dashboard.component';
-import { authGuard, publicGuard } from './core/guards/auth.guard';
-import { SignUpComponent } from './features/auth/pages/sign-up/sign-up.component';
-import { PasswordRecoveryRequestComponent } from './features/auth/pages/password-recovery-request/password-recovery-request.component';
-import { PasswordResetConfirmComponent } from './features/auth/pages/password-reset-confirm/password-reset-confirm.component';
+import { LoginComponent } from './iam/presentation/pages/login/login.component';
+import { DashboardComponent } from './shared/presentation/pages/dashboard/dashboard.component';
+import { authGuard, publicGuard } from './iam/infrastructure/guards/auth.guard';
+import { SignUpComponent } from './iam/presentation/pages/sign-up/sign-up.component';
+import { PasswordRecoveryRequestComponent } from './iam/presentation/pages/password-recovery-request/password-recovery-request.component';
+import { PasswordResetConfirmComponent } from './iam/presentation/pages/password-reset-confirm/password-reset-confirm.component';
 
 export const routes: Routes = [
   {
@@ -37,31 +37,31 @@ export const routes: Routes = [
   },
   {
     path: 'planning/sites',
-    loadComponent: () => import('./features/planning/pages/sites-management/sites-management.component')
+    loadComponent: () => import('./planning/presentation/pages/sites-management/sites-management.component')
       .then(module => module.SitesManagementComponent),
     canActivate: [authGuard]
   },
   {
     path: 'planning/maps',
-    loadComponent: () => import('./features/planning/pages/floor-plan-calibration/floor-plan-calibration.component')
+    loadComponent: () => import('./planning/presentation/pages/floor-plan-calibration/floor-plan-calibration.component')
       .then(module => module.FloorPlanCalibrationComponent),
     canActivate: [authGuard]
   },
   {
     path: 'planning/interfloor-connections',
-    loadComponent: () => import('./features/planning/pages/interfloor-connections/interfloor-connections.component')
+    loadComponent: () => import('./planning/presentation/pages/interfloor-connections/interfloor-connections.component')
       .then(module => module.InterfloorConnectionsComponent),
     canActivate: [authGuard]
   },
   {
     path: 'planning/beacons',
-    loadComponent: () => import('./features/planning/pages/beacons-management/beacons-management.component')
+    loadComponent: () => import('./planning/presentation/pages/beacons-management/beacons-management.component')
       .then(module => module.BeaconsManagementComponent),
     canActivate: [authGuard]
   },
   {
     path: 'planning/map-editor',
-    loadComponent: () => import('./features/planning/pages/map-editor/map-editor.component')
+    loadComponent: () => import('./planning/presentation/pages/map-editor/map-editor.component')
       .then(module => module.MapEditorComponent),
     canActivate: [authGuard]
   },
