@@ -2,6 +2,9 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { catchError, of, throwError } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
+import { ModelProposal } from '../../domain/model/plan-interpretation';
+
+export type { Point, PlanPolygon, ModelZone, ModelBarrier } from '../../domain/model/plan-interpretation';
 
 export interface PlanVersion {
   id: string;
@@ -11,19 +14,6 @@ export interface PlanVersion {
   sizeBytes: number;
   createdAt: string;
 }
-
-export interface Point {
-  x: number;
-  y: number;
-}
-
-export interface PlanPolygon { outer: Point[]; holes: Point[][] }
-export interface ModelZone {
-  id: string; name: string; category: string; x: number; y: number; width: number; height: number;
-  polygon?: PlanPolygon | null;
-  labelPosition?: Point | null;
-}
-export interface ModelBarrier { kind: 'WALL' | 'WINDOW' | 'OBSTACLE'; polygon: PlanPolygon }
 
 export interface CalibrationInput {
   floorId: string;
@@ -47,15 +37,7 @@ export interface PlanInterpretation {
   processing: 'SVG_CANDIDATES' | 'PREVIEW_ONLY';
   scaleStatus: 'PROVISIONAL' | 'CONFIRMED';
   metersPerUnit: number | null;
-  proposal: {
-    zones: ModelZone[];
-    nodes: (Point & { id: string; label: string; role?: string })[];
-    connections: { id: string; fromNodeId: string; toNodeId: string; distanceUnits: number; kind?: string; bidirectional?: boolean }[];
-    wallCandidates: { x1: number; y1: number; x2: number; y2: number }[];
-    barriers?: ModelBarrier[];
-    walkable?: PlanPolygon[];
-    warnings: string[];
-  } | null;
+  proposal: ModelProposal | null;
 }
 
 @Injectable({ providedIn: 'root' })

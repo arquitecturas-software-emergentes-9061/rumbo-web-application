@@ -13,7 +13,7 @@ describe('model preview helpers', () => {
   it('summarizes and detects an empty proposal', () => {
     expect(summarize(proposal)).toEqual({ zones: 1, nodes: 1, connections: 1, walls: 1, doors: 0 });
     expect(isEmptyProposal(proposal)).toBe(false);
-    expect(isEmptyProposal({ ...proposal, zones: [], nodes: [], wallCandidates: [] })).toBe(true);
+    expect(isEmptyProposal({ ...proposal, zones: [], nodes: [], connections: [], wallCandidates: [] })).toBe(true);
   });
 
   it('fits all geometry with a margin', () => {

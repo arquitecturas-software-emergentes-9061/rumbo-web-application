@@ -1,8 +1,15 @@
-:host { display: block; }
-.canvas { width: 100%; height: auto; max-height: 560px; background: #fafcfd; border: 1px solid var(--line); border-radius: var(--control-radius); touch-action: none; }
+:host { display: block; min-width: 0; }
+.canvas-frame { position: relative; min-height: 500px; background: #f5f9fc; overflow: hidden; }
+.canvas { display: block; width: 100%; height: 500px; background: #f5f9fc; touch-action: none; }
+.zoom-controls { position: absolute; top: 14px; right: 14px; display: grid; background: white; border: 1px solid #d5e1e9; box-shadow: 0 2px 8px #12304a14; }
+.zoom-controls button { width: 32px; height: 32px; border: 0; border-bottom: 1px solid #d5e1e9; background: white; color: #1778a6; font-size: 20px; cursor: pointer; }
+.zoom-controls button:last-child { border-bottom: 0; }
+.zoom-controls button:disabled { color: #a2b4bf; cursor: default; }
+.zoom-status { position: absolute; right: 14px; bottom: 10px; padding: 3px 7px; background: #ffffffd9; color: #58738a; font-size: 11px; }
 .canvas.tool-node { cursor: crosshair; }
 .canvas.tool-edge .node { cursor: pointer; }
 .plan-area { fill: #f1f6f9; stroke: var(--control-line); stroke-width: .5; vector-effect: non-scaling-stroke; }
+.plan-area.highlighted { stroke: #d17513; stroke-width: 3; }
 .edge { stroke: #5a7b94; pointer-events: none; }
 .edge.one-way { stroke-dasharray: 6 3; }
 .edge.selected { stroke: var(--primary); }
@@ -17,9 +24,19 @@
 .empty { padding: 24px; color: var(--muted); text-align: center; }
 .backdrop { pointer-events: none; opacity: .55; }
 .backdrop .zone { stroke: #3b7fa3; }
+.backdrop.interactive { opacity: .85; }
+.backdrop.interactive .zone { pointer-events: visiblePainted; cursor: pointer; }
+.backdrop.interactive .zone.selected { stroke: #1685b4; stroke-width: 2; stroke-dasharray: 6 3; }
 .barrier { fill: #142e44; }
 .barrier.window { fill: #7c9aa8; }
 .barrier.obstacle { fill: #506a80; }
 .backdrop line { stroke: #142e44; stroke-linecap: round; }
 .backdrop text { fill: var(--muted); }
 .backdrop .door { stroke: #c77700; }
+.backdrop line.selected { stroke: #c54520; stroke-width: 5px; opacity: 1; }
+.editable-wall { stroke: #173b52; pointer-events: none; }
+.editable-wall.selected { stroke: #1688b8; }
+.editable-door { stroke: #e89b24; pointer-events: none; }
+.editable-door.selected { stroke: #1688b8; }
+.geometry-hit { stroke: transparent; cursor: pointer; }
+.alert-target { fill: rgb(236 142 30 / .14); stroke: #c54520; pointer-events: none; }

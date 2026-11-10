@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import './app/shared/auth-layout/auth-forms.css';
+@import './app/features/planning/pages/map-editor/map-editor-workspace.css';
 
 :root {
   --primary: #096a99;

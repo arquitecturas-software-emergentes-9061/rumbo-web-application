@@ -2,9 +2,9 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../../../environments/environment';
-import { EditorGraph, PlanBounds } from './graph-model';
-import { GraphEditorState } from './graph-editor-state';
-import { MapEditorApiService, classifySaveError } from './map-editor-api.service';
+import { EditorGraph, PlanBounds } from '../../domain/model/graph-model';
+import { GraphEditorState } from '../../application/graph-editor-state';
+import { MapEditorApiService, classifySaveError } from '../../infrastructure/map-editor-api.service';
 
 const plan: PlanBounds = { floorId: 'f1', planVersionId: 'p1', widthUnits: 100, heightUnits: 60, metersPerUnit: 0.5 };
 const empty: EditorGraph = { nodes: [], connections: [], destinations: [] };
@@ -17,6 +17,26 @@ function session() {
 }
 
 describe('GraphEditorState', () => {
+  it('creates, edits, moves and removes a wall and its door with undo and redo', () => {
+    const state = session();
+    state.setTool('wall'); state.canvasClick(20, 10); state.canvasClick(20, 50);
+    const wall = state.selectedWall();
+    expect(wall).not.toBeNull();
+    state.setTool('door'); state.wallClick(wall!.id, 0.5);
+    const door = state.selectedDoor();
+    expect(door?.wallId).toBe(wall!.id);
+    state.updateDoor(door!.id, 0.3, 0.6);
+    state.updateWall(wall!.id, { x1: 30, y1: 10, x2: 30, y2: 50 });
+    expect(state.selectedWall()).toBeNull();
+    expect(state.floorWalls()[0].x1).toBe(30);
+    state.undo();
+    expect(state.floorWalls()[0].x1).toBe(20);
+    state.redo();
+    expect(state.floorWalls()[0].x1).toBe(30);
+    state.select({ kind: 'wall', id: wall!.id }); state.deleteSelection();
+    expect(state.floorWalls()).toHaveLength(0);
+    expect(state.floorDoors()).toHaveLength(0);
+  });
   it('starts on the first plan floor, clean and without history', () => {
     const state = session();
     expect(state.floorId()).toBe('f1');
@@ -99,6 +119,33 @@ describe('GraphEditorState', () => {
     expect(state.graph().nodes).toHaveLength(1);
   });
 
+  it('reconnects an existing arista in one undoable edit and keeps its selection', () => {
+    const state = session();
+    state.setTool('node');
+    state.canvasClick(0, 0); state.canvasClick(10, 0); state.canvasClick(30, 0);
+    state.setTool('edge'); state.nodeClick('id-1'); state.nodeClick('id-2');
+    const linkId = state.selectedConnection()?.id;
+    state.beginReconnect('target');
+    expect(state.tool()).toBe('reconnect');
+    state.nodeClick('id-3');
+    expect(state.selectedConnection()).toMatchObject({ id: linkId, targetNodeId: 'id-3', distanceMeters: 15 });
+    expect(state.tool()).toBe('select');
+    state.undo();
+    expect(state.selectedConnection()).toMatchObject({ id: linkId, targetNodeId: 'id-2' });
+  });
+
+  it('keeps reconnection pending after a rejected target and cancels cleanly', () => {
+    const state = session();
+    state.setTool('node'); state.canvasClick(0, 0); state.canvasClick(10, 0);
+    state.setTool('edge'); state.nodeClick('id-1'); state.nodeClick('id-2');
+    state.beginReconnect('target'); state.nodeClick('id-1');
+    expect(state.feedback()).toContain('dos nodos distintos');
+    expect(state.reconnecting()).not.toBeNull();
+    state.cancelReconnect();
+    expect(state.reconnecting()).toBeNull();
+    expect(state.selectedConnection()?.targetNodeId).toBe('id-2');
+  });
+
   it('refuses to apply a generated proposal without a confirmed scale', () => {
     const state = new GraphEditorState();
     state.load(empty, [{ ...plan, metersPerUnit: null }]);
@@ -140,12 +187,33 @@ describe('draft API contract', () => {
     http.expectOne(base + '/draft/graph').flush(null, { status: 404, statusText: 'Not Found' });
   });
 
+  it('round-trips versioned wall and door geometry through the draft API', () => {
+    const wall = { id: 'w1', floorId: 'f1', planVersionId: 'p1', x1: 20, y1: 0, x2: 20, y2: 60 };
+    const door = { id: 'd1', wallId: 'w1', from: .4, to: .6 };
+    api.load('s1').subscribe(snapshot => {
+      expect(snapshot?.graph.walls).toEqual([wall]);
+      expect(snapshot?.graph.doors).toEqual([door]);
+      if (snapshot) {
+        api.save(snapshot, snapshot.graph).subscribe(next => {
+          expect(next.graph.walls).toEqual([wall]);
+          expect(next.graph.doors).toEqual([door]);
+        });
+      }
+    });
+    http.expectOne(base + '/draft/graph').flush({ ...body, walls: [wall], doors: [door] },
+      { headers: { ETag: '"rev-0"' } });
+    const save = http.expectOne(base + '/m1/versions/v1/graph');
+    expect(save.request.body.walls).toEqual([wall]);
+    expect(save.request.body.doors).toEqual([door]);
+    save.flush({ ...body, walls: [wall], doors: [door] }, { headers: { ETag: '"rev-1"' } });
+  });
+
   it('replaces the whole graph with If-Match and returns the next revision', () => {
     const snapshot = { siteId: 's1', mapId: 'm1', modelVersionId: 'v1', etag: '"rev-3"', plans: [], graph: { nodes: [], connections: [], destinations: [{ id: 'd', nodeId: 'n', type: 'SERVICE', name: 'Caja', specialty: null }] } };
     api.save(snapshot, snapshot.graph).subscribe(next => expect(next.etag).toBe('"rev-4"'));
     const call = http.expectOne({ method: 'PUT', url: base + '/m1/versions/v1/graph' });
     expect(call.request.headers.get('If-Match')).toBe('"rev-3"');
-    expect(Object.keys(call.request.body)).toEqual(['nodes', 'connections', 'destinations']);
+    expect(Object.keys(call.request.body)).toEqual(['nodes', 'connections', 'walls', 'doors', 'destinations']);
     call.flush(body, { headers: { ETag: '"rev-4"' } });
   });
 

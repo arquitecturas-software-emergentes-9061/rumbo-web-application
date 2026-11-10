@@ -1,10 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ModelZone, PlanInterpretation, PlanPolygon } from '../floor-plan-calibration/floor-plans.service';
+import { ModelZone, PlanPolygon, ModelProposal } from '../../domain/model/plan-interpretation';
 
-export interface ModelDoor { id: string; x1: number; y1: number; x2: number; y2: number }
-
-/** The API also sends the recognized doors; the shared service type predates them. */
-export type ModelProposal = NonNullable<PlanInterpretation['proposal']> & { doors?: ModelDoor[] };
+export type { ModelDoor, ModelProposal } from '../../domain/model/plan-interpretation';
 
 export interface ViewBox { x: number; y: number; width: number; height: number }
 
@@ -31,8 +28,8 @@ export function summarize(proposal: ModelProposal): ProposalSummary {
 }
 
 export function isEmptyProposal(proposal: ModelProposal): boolean {
-  const { zones, nodes, walls } = summarize(proposal);
-  return zones + nodes + walls === 0;
+  const { zones, nodes, connections, walls, doors } = summarize(proposal);
+  return zones + nodes + connections + walls + doors === 0;
 }
 
 /** Fits every proposed element plus a margin so the preview never clips geometry. */
