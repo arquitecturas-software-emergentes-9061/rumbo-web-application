@@ -1,4 +1,4 @@
-import { GraphConnection, GraphNode, EditorGraph, PlanBounds, NodeType, ConnectionType,
+import { GraphConnection, GraphNode, Destination, EditorGraph, PlanBounds, NodeType, ConnectionType,
   DestinationType } from './map-graph.types';
 import { moveGraphNode } from './reconnect-connection';
 import { ModelProposal } from './plan-interpretation';
@@ -61,9 +61,23 @@ export function updateNodeType(graph: EditorGraph, id: string, type: NodeType): 
 
 export function removeNode(graph: EditorGraph, id: string): EditorGraph {
   return {
+    ...graph,
     nodes: graph.nodes.filter(node => node.id !== id),
     connections: graph.connections.filter(item => item.sourceNodeId !== id && item.targetNodeId !== id),
     destinations: graph.destinations.filter(entry => entry.nodeId !== id)
+  };
+}
+
+export interface NodeRemovalImpact {
+  connections: GraphConnection[];
+  destinations: Destination[];
+}
+
+/** Lists the entries that will be removed together with a node. */
+export function nodeRemovalImpact(graph: EditorGraph, id: string): NodeRemovalImpact {
+  return {
+    connections: graph.connections.filter(item => item.sourceNodeId === id || item.targetNodeId === id),
+    destinations: graph.destinations.filter(entry => entry.nodeId === id)
   };
 }
 
