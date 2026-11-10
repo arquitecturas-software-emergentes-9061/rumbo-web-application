@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../../../environments/environment';
-import { MapEditorApiService } from './map-editor-api.service';
+import { MapEditorApiService } from '../../infrastructure/map-editor-api.service';
 
 describe('MapEditorApiService first draft', () => {
   let service: MapEditorApiService;

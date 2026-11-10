@@ -1,10 +1,9 @@
 import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { catchError, map, of, throwError } from 'rxjs';
-import { environment } from '../../../../../environments/environment';
-import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
-import { Destination, EditorGraph, PlanBounds } from './graph-model';
-import { GraphAlert, ServerIssue, fromServerIssues } from './graph-validation';
+import { environment } from '../../../../environments/environment';
+import { GraphConnection, GraphNode, Destination, EditorGraph, PlanBounds } from '../domain/model/map-graph.types';
+import { GraphAlert, ServerIssue, fromServerIssues } from '../domain/model/graph-validation';
 
 export interface DraftSnapshot {
   siteId: string;

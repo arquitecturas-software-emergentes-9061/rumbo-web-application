@@ -7,7 +7,7 @@ import { SitesService } from '../../../../core/services/sites.service';
 import { FloorPlansService, PlanInterpretation, PlanVersion } from '../floor-plan-calibration/floor-plans.service';
 import { MapEditorComponent } from './map-editor.component';
 import { ModelProposal } from './model-preview';
-import { DraftSnapshot, MapEditorApiService } from './map-editor-api.service';
+import { DraftSnapshot, MapEditorApiService } from '../../infrastructure/map-editor-api.service';
 import { HttpErrorResponse as HttpError } from '@angular/common/http';
 
 describe('MapEditorComponent', () => {
@@ -81,11 +81,11 @@ describe('MapEditorComponent', () => {
     const fixture = create([svg]);
     component.generate();
     fixture.detectChanges();
-    const path = fixture.nativeElement.querySelector('svg.plan path.zone');
+    const path = fixture.nativeElement.querySelector('svg.canvas .backdrop path.zone');
     expect(path.getAttribute('fill-rule')).toBe('evenodd');
     expect(path.getAttribute('d').match(/M /g)).toHaveLength(2);
-    expect(fixture.nativeElement.querySelector('svg.plan rect.zone')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.zone-label').getAttribute('y')).toBe('40');
+    expect(fixture.nativeElement.querySelector('svg.canvas .backdrop rect.zone')).toBeNull();
+    expect(fixture.nativeElement.querySelector('svg.canvas .backdrop text').getAttribute('y')).toBe('40');
     expect(fixture.nativeElement.querySelector('path.barrier.window')).not.toBeNull();
   });
 
@@ -159,6 +159,28 @@ describe('MapEditorComponent', () => {
     expect(component.selectedZone()).toBeNull();
   });
 
+  it('edits generated nodes in memory and only changes the draft after applying the proposal', () => {
+    const fixture = create([svg]);
+    plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED', metersPerUnit: 0.5 })));
+    component.generate();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-graph-canvas')).not.toBeNull();
+    const originalDraft = component.editor.graph();
+    component.chooseTool('node');
+    component.canvasPoint(20, 20);
+    expect(component.proposal()?.nodes).toHaveLength(3);
+    expect(component.editor.graph()).toBe(originalDraft);
+    component.discardProposal();
+    expect(component.editor.graph()).toBe(originalDraft);
+    component.generate();
+    component.chooseTool('node');
+    component.canvasPoint(20, 20);
+    component.applyProposal();
+    expect(component.proposal()).toBeNull();
+    expect(component.editor.graph().nodes).toHaveLength(3);
+    expect(component.editor.dirty()).toBe(true);
+  });
+
   describe('draft editing', () => {
     const addNode = (x: number, y: number) => { component.editor.setTool('node'); component.editor.canvasClick(x, y); };
 
@@ -168,6 +190,30 @@ describe('MapEditorComponent', () => {
       expect(component.draft()?.etag).toBe('"rev-1"');
       expect(component.editor.floorId()).toBe('floor');
       expect(component.editor.plan()?.widthUnits).toBe(100);
+    });
+
+    it('starts the low-connectivity repair from a reachable node and updates the measured status', () => {
+      const nodes = [
+        { id: 'access', floorId: 'floor', planVersionId: 'pv', x: 0, y: 0, type: 'ACCESS' },
+        { id: 'junction', floorId: 'floor', planVersionId: 'pv', x: 10, y: 0, type: 'INTERSECTION' },
+        { id: 'room', floorId: 'floor', planVersionId: 'pv', x: 20, y: 0, type: 'DESTINATION' }
+      ];
+      const connections = [{ id: 'route', sourceNodeId: 'access', targetNodeId: 'junction',
+        type: 'CORRIDOR', distanceMeters: 5, weight: 5, verticalPenalty: 0,
+        accessibility: 'UNKNOWN' as const, bidirectional: true }];
+      drafts.load.mockReturnValue(of(draft(0.5, { nodes, connections,
+        destinations: [{ id: 'directory', nodeId: 'room', type: 'SERVICE', name: 'Consultorio', specialty: null }] })));
+      create([svg]);
+      expect(component.reachability()).toMatchObject({ reachable: 0, total: 1, percent: 0 });
+      const alert = component.graphAlerts().find(item => item.code === 'DISCONNECTED_NODE' && item.elementId === 'room');
+      expect(alert).toBeDefined();
+      expect(component.canExtendTo(alert!)).toBe(true);
+      component.extendTo(alert!);
+      expect(component.editor.pendingFrom()).toBe('junction');
+      expect(component.editor.tool()).toBe('edge');
+      component.nodePicked('room');
+      expect(component.reachability().percent).toBe(100);
+      expect(component.editor.floorConnections()).toHaveLength(2);
     });
 
     it('shows an empty state when the site has no draft and keeps editing disabled', () => {

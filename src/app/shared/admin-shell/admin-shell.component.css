@@ -70,9 +70,14 @@
 .site-name { border: 1px solid var(--line); overflow-wrap: anywhere; }
 .session { color: var(--success); background: var(--success-bg); white-space: nowrap; }
 .page-content { padding: 24px var(--page-gutter) 40px; }
+:host(.editor-mode) { grid-template-columns: 205px minmax(0, 1fr); }
+:host(.editor-mode) .topbar { min-height: 50px; }
+:host(.editor-mode) .page-content { padding: 12px 20px 32px; }
+:host(.editor-mode) .navigation a { min-height: 42px; }
 
 @media (max-width: 800px) {
   :host { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  :host(.editor-mode) { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; height: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .brand { min-height: 56px; border-bottom: 0; }
   .brand img { width: 120px; height: auto; }

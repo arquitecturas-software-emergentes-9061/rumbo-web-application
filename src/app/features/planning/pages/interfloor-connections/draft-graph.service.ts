@@ -2,30 +2,12 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { map } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
+import { GraphNode, GraphConnection } from '../../domain/model/map-graph.types';
+
+export type { GraphNode, GraphConnection } from '../../domain/model/map-graph.types';
 
 export type VerticalType = 'ELEVATOR' | 'STAIRS' | 'RAMP';
 export type Accessibility = 'UNKNOWN' | 'ACCESSIBLE' | 'INACCESSIBLE';
-
-export interface GraphNode {
-  id: string;
-  floorId: string;
-  planVersionId: string;
-  x: number;
-  y: number;
-  type: string;
-}
-
-export interface GraphConnection {
-  id: string;
-  sourceNodeId: string;
-  targetNodeId: string;
-  type: string;
-  distanceMeters: number;
-  weight: number;
-  verticalPenalty: number;
-  accessibility: Accessibility;
-  bidirectional: boolean;
-}
 
 export interface DraftGraph {
   siteId: string;

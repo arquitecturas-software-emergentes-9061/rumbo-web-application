@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -9,12 +9,14 @@ import { SitesService } from '../../../../core/services/sites.service';
 import { AdminShellComponent } from '../../../../shared/admin-shell/admin-shell.component';
 import { FloorPlansService, PlanVersion } from '../floor-plan-calibration/floor-plans.service';
 import { GraphCanvasComponent } from './graph-canvas.component';
-import { GraphEditorState, Tool } from './graph-editor-state';
+import { destinationReachability, repairOrigin } from '../../domain/model/graph-reachability';
+import { GraphEditorState, Tool } from '../../application/graph-editor-state';
+import { previewPlan, proposalGraph, proposalWithGraph } from '../../application/proposal-graph';
 import {
-  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType
-} from './graph-model';
-import { GraphAlert, countErrors } from './graph-validation';
-import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from './map-editor-api.service';
+  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor
+} from '../../domain/model/graph-model';
+import { GraphAlert, countErrors } from '../../domain/model/graph-validation';
+import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from '../../infrastructure/map-editor-api.service';
 import {
   ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeCreateDraftError, describeDraftLoadError, describeGenerationError, isEmptyProposal,
   isUnlabeled, isolatedZones, nodeLabel, polygonPath, summarize, unlabeledZones, viewBoxFor, zoneFill, zonePath
@@ -28,7 +30,8 @@ const EMPTY_PROPOSAL: ModelProposal = { zones: [], nodes: [], connections: [], w
   selector: 'app-map-editor',
   imports: [AdminShellComponent, ReactiveFormsModule, RouterLink, GraphCanvasComponent],
   templateUrl: './map-editor.component.html',
-  styleUrl: './map-editor.component.css'
+  styleUrl: './map-editor.component.css',
+  host: { class: 'map-editor-page' }
 })
 export class MapEditorComponent implements OnInit {
   readonly polygonPath = polygonPath;
@@ -41,14 +44,19 @@ export class MapEditorComponent implements OnInit {
   private readonly floorSelection = new Subject<{ siteId: string; floorId: string } | null>();
 
   readonly editor = new GraphEditorState();
+  readonly previewEditor = new GraphEditorState();
+  readonly activeEditor = computed(() => this.proposal() ? this.previewEditor : this.editor);
+  private readonly graphCanvas = viewChild(GraphCanvasComponent);
   readonly nodeTypes = NODE_TYPES;
   readonly connectionTypes = CONNECTION_TYPES;
   readonly destinationTypes = DESTINATION_TYPES;
   readonly zoneCategories = ZONE_CATEGORIES;
-  readonly tools: { id: Tool; label: string; hint: string }[] = [
+  readonly tools: { id: Tool | 'wall' | 'door'; label: string; hint: string; disabled?: boolean }[] = [
     { id: 'select', label: 'Seleccionar', hint: 'Elige un nodo o una arista' },
     { id: 'node', label: 'Nodo', hint: 'Haz clic en el plano para agregar un nodo' },
     { id: 'edge', label: 'Arista', hint: 'Elige dos nodos para conectarlos' },
+    { id: 'wall', label: 'Muro', hint: 'La edición geométrica de muros requiere soporte del plano y la API', disabled: true },
+    { id: 'door', label: 'Puerta', hint: 'La edición geométrica de puertas requiere soporte del plano y la API', disabled: true },
     { id: 'destination', label: 'Destino', hint: 'Elige un nodo para marcarlo como destino' },
     { id: 'move', label: 'Mover', hint: 'Arrastra un nodo; también puedes usar las flechas' }
   ];
@@ -147,23 +155,24 @@ export class MapEditorComponent implements OnInit {
     return [...local, ...this.serverAlerts().filter(alert => !seen.has(`${alert.code}|${alert.elementId}`))];
   });
   readonly graphErrorCount = computed(() => countErrors(this.graphAlerts()));
-  readonly canSave = computed(() => !!this.draft() && this.editor.dirty() && !this.saving());
+  readonly reachability = computed(() => destinationReachability(this.editor.graph()));
+  readonly canSave = computed(() => !!this.draft() && !this.proposal() && this.editor.dirty() && !this.saving());
   /** A site without any map can start its first draft from the plan selected for the current floor. */
   readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
     && !!this.siteId() && !!this.floorId() && !!this.versionId());
   readonly canApply = computed(() => !!this.proposal() && (this.draft() ? !!this.editor.plan() : this.canCreateDraft()));
   readonly proposalScaleBlocks = computed(() => this.editor.plan() !== null && this.editor.plan()?.metersPerUnit === null);
-  readonly toolHint = computed(() => this.tools.find(item => item.id === this.editor.tool())?.hint ?? '');
+  readonly toolHint = computed(() => this.tools.find(item => item.id === this.activeEditor().tool())?.hint ?? '');
   readonly selectedKindLabel = computed(() => this.editor.selectedNode() ? 'nodo' : this.editor.selectedConnection() ? 'arista' : null);
 
   constructor() {
     effect(() => {
-      const node = this.editor.selectedNode();
-      const entry = this.editor.selectedDestination();
-      const link = this.editor.selectedConnection();
+      const editing = this.activeEditor();
+      const node = editing.selectedNode();
+      const entry = editing.selectedDestination();
+      const link = editing.selectedConnection();
       const zone = this.selectedZone();
       if (zone) this.zoneForm.reset({ name: zone.name, category: zone.category.toUpperCase() });
-      if (node || link) this.tab.set('properties');
       if (node) {
         this.nodeForm.reset({ type: node.type as NodeType, x: node.x, y: node.y });
         this.destinationForm.reset({
@@ -181,7 +190,7 @@ export class MapEditorComponent implements OnInit {
 
   @HostListener('window:beforeunload', ['$event'])
   protected warnBeforeUnload(event: BeforeUnloadEvent): void {
-    if (this.editor.dirty()) event.preventDefault();
+    if (this.editor.dirty() || (this.proposal() && this.previewEditor.dirty())) event.preventDefault();
   }
 
   ngOnInit(): void {
@@ -339,6 +348,9 @@ export class MapEditorComponent implements OnInit {
           this.notice.set('No se reconoció ningún ambiente ni muro. Revisa que el SVG tenga las anotaciones de ambientes y puertas.');
           return;
         }
+        const plan = previewPlan(result.proposal, floorId, versionId, this.editor.plan());
+        this.previewEditor.load(proposalGraph(result.proposal, plan), [plan]);
+        this.previewEditor.floorId.set(floorId);
         this.proposal.set(result.proposal);
         this.generated.set(result.proposal);
         this.selectedLinkId.set(null);
@@ -373,7 +385,9 @@ export class MapEditorComponent implements OnInit {
     const id = this.selectedZoneId(), current = this.proposal();
     if (!id || !current || this.zoneForm.invalid) return this.zoneForm.markAllAsTouched();
     const { name, category } = this.zoneForm.getRawValue();
-    this.proposal.set(correctZone(current, id, { name, category }));
+    const corrected = correctZone(current, id, { name, category });
+    this.syncZoneNode(corrected, id);
+    this.proposal.set(proposalWithGraph(corrected, this.previewEditor.graph()));
     this.success.set('Ambiente corregido. La corrección se usará al aplicar la propuesta al borrador.');
   }
 
@@ -381,7 +395,8 @@ export class MapEditorComponent implements OnInit {
     const id = this.selectedZoneId(), original = this.generated()?.zones.find(zone => zone.id === id), current = this.proposal();
     if (!id || !original || !current) return;
     const restored = correctZone(current, id, { name: original.name, category: original.category });
-    this.proposal.set(restored);
+    this.syncZoneNode(restored, id);
+    this.proposal.set(proposalWithGraph(restored, this.previewEditor.graph()));
     this.zoneForm.reset({ name: original.name, category: original.category.toUpperCase() });
   }
 
@@ -391,6 +406,7 @@ export class MapEditorComponent implements OnInit {
 
   selectZone(id: string): void {
     this.selectedZoneId.set(id === this.selectedZoneId() ? null : id);
+    this.previewEditor.select(null);
     this.tab.set('properties');
   }
 
@@ -406,38 +422,111 @@ export class MapEditorComponent implements OnInit {
     return from && to ? { x1: from.x, y1: from.y, x2: to.x, y2: to.y } : null;
   }
 
-  chooseTool(tool: Tool): void { this.editor.setTool(tool); }
+  chooseTool(tool: Tool | 'wall' | 'door'): void {
+    if (tool === 'wall' || tool === 'door') return;
+    this.activeEditor().setTool(tool);
+  }
+
+  canvasPoint(x: number, y: number): void { this.activeEditor().canvasClick(x, y); this.syncPreviewGraph(); }
+  nodePicked(id: string): void {
+    this.selectedZoneId.set(null);
+    this.activeEditor().nodeClick(id);
+    this.syncPreviewGraph();
+    if (this.activeEditor().selection()) this.tab.set('properties');
+  }
+  connectionPicked(id: string): void {
+    this.selectedZoneId.set(null);
+    this.activeEditor().connectionClick(id);
+    if (this.activeEditor().selection()) this.tab.set('properties');
+  }
+  nodeMoved(id: string, x: number, y: number): void { this.activeEditor().moveTo(id, x, y); this.syncPreviewGraph(); }
+  deleteSelected(): void { this.activeEditor().deleteSelection(); this.syncPreviewGraph(); }
+  undo(): void { this.activeEditor().undo(); this.syncPreviewGraph(); }
+  redo(): void { this.activeEditor().redo(); this.syncPreviewGraph(); }
+
+  private syncPreviewGraph(): void {
+    const current = this.proposal();
+    if (current) this.proposal.set(proposalWithGraph(current, this.previewEditor.graph()));
+  }
+
+  private syncZoneNode(proposal: ModelProposal, zoneId: string): void {
+    const zone = proposal.zones.find(item => item.id === zoneId);
+    const node = this.previewEditor.graph().nodes.find(item => item.id === zoneId);
+    if (!zone || !node || node.type === 'ACCESS') return;
+    const type = nodeTypeFor(zone);
+    if (node.type !== type) this.previewEditor.setNodeType(node.id, type);
+    if (type === 'DESTINATION') this.previewEditor.saveDestination(node.id, {
+      type: 'SERVICE', name: zone.name, specialty: null
+    });
+  }
+
+  alertHeading(alert: GraphAlert): string {
+    const headings: Record<string, string> = {
+      DISCONNECTED_NODE: 'Nodo aislado', UNREACHABLE_DESTINATION: 'Destino sin acceso',
+      DUPLICATE_CONNECTION: 'Arista duplicada', INVALID_CONNECTION_DATA: 'Datos de arista inválidos',
+      MISSING_ACCESS: 'Falta un acceso', MISSING_DESTINATION: 'Falta un destino'
+    };
+    return headings[alert.code] ?? (alert.severity === 'error' ? 'Error del modelo' : 'Advertencia del modelo');
+  }
+
+  beginReconnect(end: 'source' | 'target'): void { this.activeEditor().beginReconnect(end); }
+  canExtendTo(alert: GraphAlert): boolean {
+    return !!alert.elementId && (alert.code === 'DISCONNECTED_NODE' || alert.code === 'UNREACHABLE_DESTINATION') &&
+      repairOrigin(this.editor.graph(), alert.elementId) !== null;
+  }
+  extendTo(alert: GraphAlert): void {
+    const targetId = alert.elementId;
+    if (!targetId) return;
+    const origin = repairOrigin(this.editor.graph(), targetId);
+    if (!origin) return;
+    this.focusAlert(alert);
+    this.editor.startConnectionFrom(origin);
+    this.tab.set('alerts');
+  }
 
   applyNode(): void {
-    const node = this.editor.selectedNode();
-    const plan = this.editor.plan();
+    const editing = this.activeEditor();
+    const node = editing.selectedNode();
+    const plan = editing.plan();
     if (!node || !plan || this.nodeForm.invalid) return this.nodeForm.markAllAsTouched();
     const { type, x, y } = this.nodeForm.getRawValue();
-    if (type !== node.type) this.editor.setNodeType(node.id, type);
-    if (x !== node.x || y !== node.y) this.editor.moveTo(node.id, x as number, y as number);
+    if (type !== node.type) editing.setNodeType(node.id, type);
+    if (x !== node.x || y !== node.y) editing.moveTo(node.id, x as number, y as number);
     if (type === 'DESTINATION') {
       if (this.destinationForm.invalid) return this.destinationForm.markAllAsTouched();
       const entry = this.destinationForm.getRawValue();
-      this.editor.saveDestination(node.id, { name: entry.name, type: entry.type, specialty: entry.specialty || null });
+      editing.saveDestination(node.id, { name: entry.name, type: entry.type, specialty: entry.specialty || null });
     }
+    this.syncPreviewGraph();
   }
 
   applyConnection(): void {
-    const link = this.editor.selectedConnection();
+    const link = this.activeEditor().selectedConnection();
     if (!link || this.connectionForm.invalid) return this.connectionForm.markAllAsTouched();
     const { type, distanceMeters, weight, accessibility, bidirectional } = this.connectionForm.getRawValue();
-    this.editor.patchConnection(link.id, {
+    this.activeEditor().patchConnection(link.id, {
       type, accessibility, bidirectional, distanceMeters: distanceMeters as number, weight: weight as number
     });
+    this.syncPreviewGraph();
   }
 
   focusAlert(alert: GraphAlert): void {
     if (alert.elementType === 'NODE' && alert.elementId) {
       const node = this.editor.graph().nodes.find(item => item.id === alert.elementId);
-      if (node) { this.selectFloor(node.floorId); this.editor.select({ kind: 'node', id: node.id }); this.tab.set('properties'); }
+      if (node) {
+        if (this.floorId() !== node.floorId) this.selectFloor(node.floorId);
+        this.editor.select({ kind: 'node', id: node.id });
+        this.graphCanvas()?.focusPoint(node.x, node.y);
+        this.tab.set('properties');
+      }
     }
     if (alert.elementType === 'CONNECTION' && alert.elementId) {
+      const link = this.editor.graph().connections.find(item => item.id === alert.elementId);
+      const source = link && this.editor.graph().nodes.find(item => item.id === link.sourceNodeId);
+      if (source && this.floorId() !== source.floorId) this.selectFloor(source.floorId);
       this.editor.select({ kind: 'connection', id: alert.elementId });
+      const target = link && this.editor.graph().nodes.find(item => item.id === link.targetNodeId);
+      if (source && target) this.graphCanvas()?.focusPoint((source.x + target.x) / 2, (source.y + target.y) / 2);
       this.tab.set('properties');
     }
   }
@@ -475,6 +564,7 @@ export class MapEditorComponent implements OnInit {
 
   private resetPreview(): void {
     this.proposal.set(null);
+    this.previewEditor.load({ nodes: [], connections: [], destinations: [] }, []);
     this.generated.set(null);
     this.selectedLinkId.set(null);
     this.selectedZoneId.set(null);

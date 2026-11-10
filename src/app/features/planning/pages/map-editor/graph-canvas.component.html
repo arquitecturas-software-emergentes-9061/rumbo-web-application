@@ -1,15 +1,19 @@
 @if (plan(); as bounds) {
-  <svg class="canvas" [attr.viewBox]="'0 0 ' + bounds.widthUnits + ' ' + bounds.heightUnits"
+  <div class="canvas-frame">
+  <svg class="canvas" [attr.viewBox]="viewBox()"
     preserveAspectRatio="xMidYMid meet" role="application"
     aria-label="Lienzo del mapa. Usa las flechas sobre un nodo enfocado para moverlo."
-    [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge'"
+    [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge' || tool() === 'reconnect'"
     (click)="canvasClicked($event)" (pointermove)="pointerMoved($event)">
     <rect class="plan-area" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
     @if (backdrop(); as context) {
-      <g class="backdrop" aria-hidden="true">
+      <g class="backdrop" [class.interactive]="interactiveZones()" [attr.aria-hidden]="interactiveZones() ? null : 'true'">
         @for (zone of context.zones; track zone.id) {
-          <path class="zone" [attr.d]="zonePath(zone)" fill-rule="evenodd"
-            [attr.fill]="fill(zone.category)" [attr.stroke-width]="unit()" />
+          <path class="zone" [class.selected]="zone.id === selectedZoneId()" [attr.d]="zonePath(zone)" fill-rule="evenodd"
+            [attr.fill]="fill(zone.category)" [attr.stroke-width]="unit()"
+            [attr.role]="interactiveZones() ? 'button' : null" [attr.tabindex]="interactiveZones() ? 0 : null"
+            [attr.aria-label]="interactiveZones() ? 'Ambiente ' + zone.name : null"
+            (click)="pickZone($event, zone.id)" (keydown.enter)="pickZone($event, zone.id)" (keydown.space)="pickZone($event, zone.id)" />
           <text [attr.x]="zone.labelPosition?.x ?? zone.x + zone.width / 2" [attr.y]="zone.labelPosition?.y ?? zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
             text-anchor="middle">{{ zone.name }}</text>
         }
@@ -36,7 +40,8 @@
       <line class="edge-hit" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
         [attr.stroke-width]="unit() * 10" role="button" tabindex="0"
         [attr.aria-label]="'Conexión ' + line.connection.type"
-        (click)="lineClicked($event, line.connection.id)" (keydown.enter)="connectionPicked.emit(line.connection.id)" />
+        (click)="lineClicked($event, line.connection.id)" (keydown.enter)="connectionPicked.emit(line.connection.id)"
+        (keydown.space)="connectionPicked.emit(line.connection.id)" />
     }
     @for (node of positioned(); track node.id) {
       <g class="node" [class.selected]="isSelected('node', node.id)" [class.pending]="pendingFrom() === node.id"
@@ -51,6 +56,13 @@
       </g>
     }
   </svg>
+  <div class="zoom-controls" role="toolbar" aria-label="Zoom del mapa">
+    <button type="button" aria-label="Acercar" [disabled]="zoom() >= 4" (click)="zoomIn()">+</button>
+    <button type="button" aria-label="Alejar" [disabled]="zoom() <= 1" (click)="zoomOut()">−</button>
+    <button type="button" aria-label="Ajustar al plano" (click)="fit()">⌗</button>
+  </div>
+  <span class="zoom-status">{{ zoom() * 100 }}%</span>
+  </div>
 } @else {
   <p class="empty">Este piso no tiene un plano en el borrador. Carga y calibra un plano en Mapas.</p>
 }

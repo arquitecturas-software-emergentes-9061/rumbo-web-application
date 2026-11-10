@@ -2,9 +2,9 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../../../environments/environment';
-import { EditorGraph, PlanBounds } from './graph-model';
-import { GraphEditorState } from './graph-editor-state';
-import { MapEditorApiService, classifySaveError } from './map-editor-api.service';
+import { EditorGraph, PlanBounds } from '../../domain/model/graph-model';
+import { GraphEditorState } from '../../application/graph-editor-state';
+import { MapEditorApiService, classifySaveError } from '../../infrastructure/map-editor-api.service';
 
 const plan: PlanBounds = { floorId: 'f1', planVersionId: 'p1', widthUnits: 100, heightUnits: 60, metersPerUnit: 0.5 };
 const empty: EditorGraph = { nodes: [], connections: [], destinations: [] };
@@ -97,6 +97,33 @@ describe('GraphEditorState', () => {
     state.deleteSelection();
     expect(state.graph().connections).toEqual([]);
     expect(state.graph().nodes).toHaveLength(1);
+  });
+
+  it('reconnects an existing arista in one undoable edit and keeps its selection', () => {
+    const state = session();
+    state.setTool('node');
+    state.canvasClick(0, 0); state.canvasClick(10, 0); state.canvasClick(30, 0);
+    state.setTool('edge'); state.nodeClick('id-1'); state.nodeClick('id-2');
+    const linkId = state.selectedConnection()?.id;
+    state.beginReconnect('target');
+    expect(state.tool()).toBe('reconnect');
+    state.nodeClick('id-3');
+    expect(state.selectedConnection()).toMatchObject({ id: linkId, targetNodeId: 'id-3', distanceMeters: 15 });
+    expect(state.tool()).toBe('select');
+    state.undo();
+    expect(state.selectedConnection()).toMatchObject({ id: linkId, targetNodeId: 'id-2' });
+  });
+
+  it('keeps reconnection pending after a rejected target and cancels cleanly', () => {
+    const state = session();
+    state.setTool('node'); state.canvasClick(0, 0); state.canvasClick(10, 0);
+    state.setTool('edge'); state.nodeClick('id-1'); state.nodeClick('id-2');
+    state.beginReconnect('target'); state.nodeClick('id-1');
+    expect(state.feedback()).toContain('dos nodos distintos');
+    expect(state.reconnecting()).not.toBeNull();
+    state.cancelReconnect();
+    expect(state.reconnecting()).toBeNull();
+    expect(state.selectedConnection()?.targetNodeId).toBe('id-2');
   });
 
   it('refuses to apply a generated proposal without a confirmed scale', () => {

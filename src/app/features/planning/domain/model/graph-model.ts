@@ -1,10 +1,10 @@
-import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
-import { ModelProposal } from './model-preview';
+import { GraphConnection, GraphNode, EditorGraph, PlanBounds, NodeType, ConnectionType,
+  DestinationType } from './map-graph.types';
+import { moveGraphNode } from './reconnect-connection';
+import { ModelProposal } from './plan-interpretation';
 
-export type NodeType = 'INTERSECTION' | 'ACCESS' | 'DESTINATION' | 'VERTICAL_LINK' | 'REFERENCE';
-export type ConnectionType = 'CORRIDOR' | 'DOORWAY' | 'STAIRS' | 'RAMP' | 'ELEVATOR';
-export type DestinationType = 'DOCTOR' | 'SPECIALTY' | 'SERVICE';
-export type ConnectionAccessibility = 'UNKNOWN' | 'ACCESSIBLE' | 'INACCESSIBLE';
+export type { Destination, EditorGraph, PlanBounds, NodeType, ConnectionType, DestinationType,
+  ConnectionAccessibility } from './map-graph.types';
 
 export const NODE_TYPES: { value: NodeType; label: string }[] = [
   { value: 'INTERSECTION', label: 'Intersección' }, { value: 'ACCESS', label: 'Acceso' },
@@ -18,28 +18,6 @@ export const CONNECTION_TYPES: { value: ConnectionType; label: string }[] = [
 export const DESTINATION_TYPES: { value: DestinationType; label: string }[] = [
   { value: 'DOCTOR', label: 'Médico' }, { value: 'SPECIALTY', label: 'Especialidad' }, { value: 'SERVICE', label: 'Servicio' }
 ];
-
-export interface Destination {
-  id: string;
-  nodeId: string;
-  type: string;
-  name: string;
-  specialty: string | null;
-}
-
-export interface PlanBounds {
-  floorId: string;
-  planVersionId: string;
-  widthUnits: number;
-  heightUnits: number;
-  metersPerUnit: number | null;
-}
-
-export interface EditorGraph {
-  nodes: GraphNode[];
-  connections: GraphConnection[];
-  destinations: Destination[];
-}
 
 export const EMPTY_GRAPH: EditorGraph = { nodes: [], connections: [], destinations: [] };
 
@@ -69,8 +47,7 @@ export function addNode(graph: EditorGraph, plan: PlanBounds, x: number, y: numb
 }
 
 export function moveNode(graph: EditorGraph, id: string, plan: PlanBounds, x: number, y: number): EditorGraph {
-  const point = clampPoint(plan, x, y);
-  return { ...graph, nodes: graph.nodes.map(node => node.id === id ? { ...node, ...point } : node) };
+  return moveGraphNode(graph, id, plan, x, y);
 }
 
 /** Changing a node away from DESTINATION also drops its directory entry. */
@@ -183,11 +160,14 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
     if (near) { ids.set(node.id, near.id); continue; }
     const id = newId();
     const zone = zoneById.get(node.id);
-    const type = node.role === 'ENTRANCE' ? 'ACCESS' : nodeTypeFor(zone);
+    const type = node.role === 'ENTRANCE' || node.role === 'ACCESS' ? 'ACCESS'
+      : node.role === 'DESTINATION' ? 'DESTINATION'
+      : node.role === 'VERTICAL_LINK' ? 'VERTICAL_LINK'
+      : node.role === 'INTERSECTION' ? 'INTERSECTION' : nodeTypeFor(zone);
     ids.set(node.id, id);
     created.push({ id, floorId: plan.floorId, planVersionId: plan.planVersionId, ...point, type });
-    if (type === 'DESTINATION' && zone) {
-      destinations.push({ id: newId(), nodeId: id, type: 'SERVICE', name: zone.name, specialty: null });
+    if (type === 'DESTINATION') {
+      destinations.push({ id: newId(), nodeId: id, type: 'SERVICE', name: zone?.name ?? node.label, specialty: null });
     }
   }
   const all = [...kept.nodes, ...created];
@@ -202,8 +182,13 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
     linked.add(key);
     const meters = distanceMeters(byId.get(source) as GraphNode, byId.get(target) as GraphNode, plan);
     connections.push({
-      id: newId(), sourceNodeId: source, targetNodeId: target, type: link.kind === 'CORRIDOR' ? 'CORRIDOR' : 'DOORWAY', distanceMeters: meters, weight: meters,
-      verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: link.bidirectional ?? true
+      id: newId(), sourceNodeId: source, targetNodeId: target,
+      type: link.graphType ?? (link.kind === 'CORRIDOR' ? 'CORRIDOR' : 'DOORWAY'),
+      distanceMeters: meters,
+      weight: link.weight != null && link.distanceMeters != null && Math.abs(link.weight - link.distanceMeters) > 0.001
+        ? link.weight : meters,
+      verticalPenalty: link.verticalPenalty ?? 0,
+      accessibility: link.accessibility ?? 'UNKNOWN', bidirectional: link.bidirectional ?? true
     });
   }
   return { nodes: all, connections, destinations };

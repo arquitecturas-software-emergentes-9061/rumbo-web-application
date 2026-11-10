@@ -8,10 +8,12 @@ import { AuthService } from '../../core/services/auth.service';
   imports: [RouterLink, RouterLinkActive],
   templateUrl: './admin-shell.component.html',
   styleUrl: './admin-shell.component.css',
+  host: { '[class.editor-mode]': 'editorMode()' },
 })
 export class AdminShellComponent {
   private readonly auth = inject(AuthService);
   readonly context = input<string | null>(null);
+  readonly editorMode = input(false);
   readonly signingOut = signal(false);
 
   signOut(): void {

@@ -1,9 +1,11 @@
 import {
   nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, removeConnection,
   removeNode, updateConnection, updateNodeType, upsertDestination
-} from './graph-model';
-import { countErrors, fromServerIssues, validateGraph } from './graph-validation';
-import { GraphHistory } from './graph-history';
+} from '../../domain/model/graph-model';
+import { countErrors, fromServerIssues, validateGraph } from '../../domain/model/graph-validation';
+import { GraphHistory } from '../../application/graph-history';
+import { reconnectConnection } from '../../domain/model/reconnect-connection';
+import { destinationReachability, repairOrigin } from '../../domain/model/graph-reachability';
 
 const plan: PlanBounds = { floorId: 'f1', planVersionId: 'p1', widthUnits: 100, heightUnits: 60, metersPerUnit: 0.5 };
 const other: PlanBounds = { floorId: 'f2', planVersionId: 'p2', widthUnits: 100, heightUnits: 60, metersPerUnit: 0.5 };
@@ -153,6 +155,41 @@ describe('classified zones when applying a proposal', () => {
     const after = run([zone('u', 'Triaje', 'ROOM')]);
     expect(before.destinations).toEqual([]);
     expect(after.destinations[0]).toMatchObject({ name: 'Triaje' });
+  });
+});
+
+describe('WI-US11-03 graph corrections', () => {
+  it('reconnects one endpoint while preserving the link identity and its custom weight', () => {
+    const graph = updateConnection(build(), 'ab', { weight: 17, type: 'DOORWAY', accessibility: 'ACCESSIBLE' });
+    const result = reconnectConnection(graph, 'ab', 'target', 'c', [plan]);
+    expect(result.rejected).toBeUndefined();
+    expect(result.graph.connections[0]).toMatchObject({ id: 'ab', sourceNodeId: 'a', targetNodeId: 'c',
+      distanceMeters: 10, weight: 17, type: 'DOORWAY', accessibility: 'ACCESSIBLE' });
+    expect(graph.connections[0].targetNodeId).toBe('b');
+  });
+
+  it('rejects invalid reconnections without modifying the graph', () => {
+    const graph = build();
+    expect(reconnectConnection(graph, 'ab', 'target', 'a', [plan])).toMatchObject({ graph, rejected: 'SAME_NODE' });
+    expect(reconnectConnection(graph, 'bc', 'target', 'a', [plan])).toMatchObject({ graph, rejected: 'DUPLICATE' });
+    expect(reconnectConnection(graph, 'ab', 'target', 'missing', [plan])).toMatchObject({ graph, rejected: 'MISSING_NODE' });
+    const crossFloor = addNode(graph, other, 2, 2, 'INTERSECTION', 'elsewhere');
+    expect(reconnectConnection(crossFloor, 'ab', 'target', 'elsewhere', [plan, other]).rejected).toBe('DIFFERENT_FLOOR');
+  });
+
+  it('updates automatic distances after moving a node but leaves a custom weight alone', () => {
+    const graph = updateConnection(build(), 'bc', { weight: 11 });
+    const moved = moveNode(graph, 'b', plan, 15, 0);
+    expect(moved.connections.find(link => link.id === 'ab')).toMatchObject({ distanceMeters: 7.5, weight: 7.5 });
+    expect(moved.connections.find(link => link.id === 'bc')).toMatchObject({ distanceMeters: 2.5, weight: 11 });
+    expect(graph.connections.find(link => link.id === 'ab')?.distanceMeters).toBe(5);
+  });
+
+  it('derives connectivity from real destinations and offers a reachable repair origin', () => {
+    const graph = addNode(build(), plan, 60, 10, 'DESTINATION', 'isolated');
+    expect(destinationReachability(graph)).toMatchObject({ reachable: 1, total: 2, percent: 50,
+      unreachableNodeIds: ['isolated'] });
+    expect(repairOrigin(graph, 'isolated')).toBe('c');
   });
 });
 

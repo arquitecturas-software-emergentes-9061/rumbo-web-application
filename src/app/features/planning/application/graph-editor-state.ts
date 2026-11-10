@@ -1,15 +1,16 @@
 import { computed, signal } from '@angular/core';
-import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
+import { GraphConnection, GraphNode } from '../domain/model/map-graph.types';
 import {
   ConnectionPatch, ConnectionRejection, Destination, DestinationInput, EMPTY_GRAPH, EditorGraph, IdFactory, NodeType, PlanBounds,
   addConnection, addNode, applyProposal, moveNode, planFor, randomId, removeConnection, removeNode, updateConnection, updateNodeType,
   upsertDestination
-} from './graph-model';
+} from '../domain/model/graph-model';
 import { GraphHistory } from './graph-history';
-import { GraphAlert, validateGraph } from './graph-validation';
-import { ModelProposal } from './model-preview';
+import { GraphAlert, validateGraph } from '../domain/model/graph-validation';
+import { ModelProposal } from '../domain/model/plan-interpretation';
+import { ConnectionEnd, reconnectConnection } from '../domain/model/reconnect-connection';
 
-export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'move';
+export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'move' | 'reconnect';
 export type Selection = { kind: 'node' | 'connection'; id: string };
 
 const REJECTIONS: Record<ConnectionRejection, string> = {
@@ -27,6 +28,7 @@ export class GraphEditorState {
   readonly tool = signal<Tool>('select');
   readonly selection = signal<Selection | null>(null);
   readonly pendingFrom = signal<string | null>(null);
+  readonly reconnecting = signal<{ connectionId: string; end: ConnectionEnd } | null>(null);
   readonly feedback = signal<string | null>(null);
 
   private readonly baseline = signal(JSON.stringify(EMPTY_GRAPH));
@@ -66,7 +68,9 @@ export class GraphEditorState {
     this.history.clear();
     this.revision.update(value => value + 1);
     this.selection.set(null);
+    this.tool.set('select');
     this.pendingFrom.set(null);
+    this.reconnecting.set(null);
     this.feedback.set(null);
     if (!plans.some(plan => plan.floorId === this.floorId())) this.floorId.set(plans[0]?.floorId ?? null);
   }
@@ -74,6 +78,7 @@ export class GraphEditorState {
   setTool(tool: Tool): void {
     this.tool.set(tool);
     this.pendingFrom.set(null);
+    this.reconnecting.set(null);
     this.feedback.set(null);
   }
 
@@ -90,6 +95,7 @@ export class GraphEditorState {
 
   nodeClick(id: string): void {
     switch (this.tool()) {
+      case 'reconnect': return this.finishReconnect(id);
       case 'edge': return this.connect(id);
       case 'destination': {
         this.commit(updateNodeType(this.graph(), id, 'DESTINATION'));
@@ -122,11 +128,30 @@ export class GraphEditorState {
 
   patchConnection(id: string, patch: ConnectionPatch): void { this.commit(updateConnection(this.graph(), id, patch)); }
 
+  beginReconnect(end: ConnectionEnd): void {
+    const connection = this.selectedConnection();
+    if (!connection) return;
+    this.tool.set('reconnect');
+    this.pendingFrom.set(null);
+    this.reconnecting.set({ connectionId: connection.id, end });
+    this.feedback.set(`Selecciona el nuevo nodo de ${end === 'source' ? 'origen' : 'destino'} para la arista.`);
+  }
+
+  startConnectionFrom(nodeId: string): void {
+    if (!this.graph().nodes.some(node => node.id === nodeId)) return;
+    this.setTool('edge');
+    this.pendingFrom.set(nodeId);
+    this.feedback.set('Selecciona el nodo aislado para extender la arista desde el nodo marcado.');
+  }
+
+  cancelReconnect(): void { this.setTool('select'); }
+
   deleteSelection(): void {
     const current = this.selection();
     if (!current) return;
     this.commit(current.kind === 'node' ? removeNode(this.graph(), current.id) : removeConnection(this.graph(), current.id));
     this.selection.set(null);
+    this.reconnecting.set(null);
   }
 
   applyGenerated(proposal: ModelProposal): boolean {
@@ -149,6 +174,18 @@ export class GraphEditorState {
     this.commit(result.graph);
     const created = result.graph.connections[result.graph.connections.length - 1];
     this.select({ kind: 'connection', id: created.id });
+    this.feedback.set(null);
+  }
+
+  private finishReconnect(nodeId: string): void {
+    const pending = this.reconnecting();
+    if (!pending) return;
+    const result = reconnectConnection(this.graph(), pending.connectionId, pending.end, nodeId, this.plans());
+    if (result.rejected) { this.feedback.set(REJECTIONS[result.rejected]); return; }
+    if (result.graph !== this.graph()) this.commit(result.graph);
+    this.tool.set('select');
+    this.reconnecting.set(null);
+    this.select({ kind: 'connection', id: pending.connectionId });
     this.feedback.set(null);
   }
 

@@ -1,4 +1,4 @@
-import { EditorGraph, PlanBounds } from './graph-model';
+import { EditorGraph, PlanBounds } from './map-graph.types';
 
 export type AlertSeverity = 'error' | 'warning';
 export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION';

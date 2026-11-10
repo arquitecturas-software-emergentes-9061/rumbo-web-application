@@ -1,10 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ModelZone, PlanInterpretation, PlanPolygon } from '../floor-plan-calibration/floor-plans.service';
+import { ModelZone, PlanPolygon, ModelProposal } from '../../domain/model/plan-interpretation';
 
-export interface ModelDoor { id: string; x1: number; y1: number; x2: number; y2: number }
-
-/** The API also sends the recognized doors; the shared service type predates them. */
-export type ModelProposal = NonNullable<PlanInterpretation['proposal']> & { doors?: ModelDoor[] };
+export type { ModelDoor, ModelProposal } from '../../domain/model/plan-interpretation';
 
 export interface ViewBox { x: number; y: number; width: number; height: number }
 

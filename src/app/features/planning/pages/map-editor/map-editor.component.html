@@ -1,4 +1,4 @@
-<app-admin-shell [context]="site()?.name ?? null">
+<app-admin-shell [context]="site()?.name ?? null" [editorMode]="true">
   <header class="page-heading">
     <nav class="breadcrumb" aria-label="Ubicación actual">
       <a routerLink="/planning/maps">Mapas</a>
@@ -9,6 +9,13 @@
     </nav>
     <h1>Editor de mapa</h1>
   </header>
+
+  <nav class="workflow-tabs" aria-label="Secciones del mapa">
+    <a routerLink="/planning/maps">Plano</a>
+    <span class="active" aria-current="page">Editor de mapa</span>
+    <a routerLink="/planning/interfloor-connections">Conexiones entre pisos</a>
+    <span class="future-step" title="Disponible al validar el modelo">Validar y publicar</span>
+  </nav>
 
   @if (error(); as message) {
     <p class="alert" role="alert">{{ message }}</p>
@@ -49,20 +56,27 @@
 
     <div class="toolbar" role="toolbar" aria-label="Acciones del modelo">
       <button type="button" class="primary generate" [disabled]="!canGenerate()" (click)="generate()">
-        {{ generating() ? 'Generando…' : '✦ Generar modelo' }}
+        {{ generating() ? 'Generando…' : '✧ Generar modelo' }}
       </button>
       @if (proposal()) {
         <span class="preview-badge">Vista previa — sin guardar</span>
-      } @else if (editor.dirty()) {
+      } @else if (activeEditor().dirty()) {
         <span class="preview-badge dirty">Cambios sin guardar</span>
       }
       <span class="spacer"></span>
-      <button type="button" class="outline" [disabled]="!editor.canUndo()" (click)="editor.undo()" aria-label="Deshacer">↶ Deshacer</button>
-      <button type="button" class="outline" [disabled]="!editor.canRedo()" (click)="editor.redo()" aria-label="Rehacer">↷ Rehacer</button>
+      <button type="button" class="history-button" [disabled]="!activeEditor().canUndo()" (click)="undo()" aria-label="Deshacer" title="Deshacer">↶</button>
+      <button type="button" class="history-button" [disabled]="!activeEditor().canRedo()" (click)="redo()" aria-label="Rehacer" title="Rehacer">↷</button>
       <button type="button" class="outline save" [disabled]="!canSave()" (click)="save()">
         {{ saving() ? 'Guardando…' : 'Guardar borrador' }}
       </button>
     </div>
+
+    @if (!proposal() && reachability().total > 0 && reachability().percent < 100) {
+      <div class="model-warning" role="status">
+        <strong>AVISO: MODELO INCOMPLETO</strong>
+        <span>{{ reachability().total - reachability().reachable }} destinos no tienen una ruta desde un acceso. Corrige las conexiones antes de publicar.</span>
+      </div>
+    }
     @if (blockedReason(); as reason) {
       <p class="hint" role="status">{{ reason }}</p>
     }
@@ -84,15 +98,30 @@
       </div>
     }
 
-    <div class="editor" [class.no-tools]="!!proposal()">
-      @if (!proposal()) {
+    <div class="editor">
         <div class="tools" role="toolbar" aria-label="Herramientas de edición" aria-orientation="vertical">
           @for (item of tools; track item.id) {
-            <button type="button" [class.active]="editor.tool() === item.id" [attr.aria-pressed]="editor.tool() === item.id"
-              [title]="item.hint" [disabled]="!draft()" (click)="chooseTool(item.id)">{{ item.label }}</button>
+            <button type="button" [class.active]="activeEditor().tool() === item.id" [attr.aria-pressed]="activeEditor().tool() === item.id"
+              [title]="item.hint" [disabled]="item.disabled || (!draft() && !proposal())" (click)="chooseTool(item.id)">
+              <span class="tool-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  @switch (item.id) {
+                    @case ('select') { <path d="M4 3 19 11l-7 1-3 7-5-16Z" /> }
+                    @case ('node') { <circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="1.5" /> }
+                    @case ('edge') { <path d="M3 17 9 10l5 3 7-8" /><circle cx="3" cy="17" r="1" /><circle cx="21" cy="5" r="1" /> }
+                    @case ('wall') { <rect x="4" y="6" width="16" height="12" /><path d="M4 12h16M10 6v6m5 0v6" /> }
+                    @case ('door') { <path d="M5 20V4h11v16H5Zm11-13a8 8 0 0 1 5 8" /><circle cx="13" cy="12" r=".7" /> }
+                    @case ('destination') { <path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" /><circle cx="12" cy="9" r="2" /> }
+                    @case ('move') { <path d="M6 13V9a1.5 1.5 0 0 1 3 0v3-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v5-3a1.5 1.5 0 0 1 3 0v7c0 3-2 5-5 5h-3c-2 0-3-1-4-3l-2-4a1.5 1.5 0 0 1 2-2l2 2" /> }
+                  }
+                </svg>
+              </span><span>{{ item.label }}</span>
+            </button>
+            @if (activeEditor().tool() === 'reconnect') {
+              <button type="button" class="cancel-tool" (click)="activeEditor().cancelReconnect()"><span class="tool-icon" aria-hidden="true">×</span><span>Cancelar</span></button>
+            }
           }
         </div>
-      }
 
       <section class="canvas card" aria-label="Lienzo del modelo">
         @if (proposal(); as current) {
@@ -104,43 +133,13 @@
               <button type="button" class="outline" (click)="discardProposal()">Descartar</button>
             </span>
           </div>
-          <svg class="plan" [attr.viewBox]="viewBox()" preserveAspectRatio="xMidYMid meet" role="img"
-            [attr.aria-label]="'Modelo propuesto con ' + current.zones.length + ' ambientes y ' + current.nodes.length + ' nodos'">
-            @for (zone of current.zones; track zone.id) {
-              <path class="zone" [class.selected]="zone.id === selectedZoneId()" [class.unlabeled]="unlabeledZone(zone)" [class.isolated]="isIsolated(zone.id)"
-                [attr.d]="zonePath(zone)" fill-rule="evenodd"
-                [attr.fill]="fill(zone.category)" [attr.stroke-width]="strokeUnit() * 1.5" tabindex="0" role="button"
-                [attr.aria-label]="'Ambiente ' + zone.name + (unlabeledZone(zone) ? ' sin etiqueta confiable' : '')"
-                (click)="selectZone(zone.id)" (keydown.enter)="selectZone(zone.id)" (keydown.space)="selectZone(zone.id)" />
-              <text class="zone-label" [attr.x]="zone.labelPosition?.x ?? zone.x + zone.width / 2" [attr.y]="zone.labelPosition?.y ?? zone.y + zone.height / 2"
-                [attr.font-size]="strokeUnit() * 6.5" text-anchor="middle">{{ unlabeledZone(zone) ? '⚠ ' : '' }}{{ zone.name }}</text>
-            }
-            @if (current.barriers?.length) {
-              @for (barrier of current.barriers; track $index) {
-                <path class="barrier" [class.window]="barrier.kind === 'WINDOW'" [class.obstacle]="barrier.kind === 'OBSTACLE'"
-                  [attr.d]="polygonPath(barrier.polygon)" fill-rule="evenodd" />
-              }
-            } @else {
-              @for (wall of current.wallCandidates; track $index) {
-                <line class="wall" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
-                  [attr.stroke-width]="strokeUnit() * 2.2" />
-              }
-            }
-            @for (door of current.doors ?? []; track door.id) {
-              <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2"
-                [attr.stroke-width]="strokeUnit() * 3.2"><title>Puerta {{ door.id }}</title></line>
-            }
-            @for (connection of current.connections; track connection.id) {
-              @if (connectionLine(connection); as line) {
-                <line class="edge" [class.selected]="connection.id === selectedLinkId()" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
-                  [attr.stroke-width]="strokeUnit() * 2" />
-              }
-            }
-            @for (node of current.nodes; track node.id) {
-              <circle class="node" [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="strokeUnit() * 4"
-                [attr.stroke-width]="strokeUnit() * 2" />
-            }
-          </svg>
+          <app-graph-canvas [nodes]="previewEditor.floorNodes()" [connections]="previewEditor.floorConnections()"
+            [destinations]="previewEditor.graph().destinations" [plan]="previewEditor.plan()" [tool]="previewEditor.tool()"
+            [selection]="previewEditor.selection()" [pendingFrom]="previewEditor.pendingFrom()" [backdrop]="current"
+            [interactiveZones]="true" [selectedZoneId]="selectedZoneId()"
+            (zonePicked)="selectZone($event)" (canvasPoint)="canvasPoint($event.x, $event.y)"
+            (nodePicked)="nodePicked($event)" (connectionPicked)="connectionPicked($event)"
+            (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)" />
           <ul class="legend" aria-label="Leyenda">
             <li><span class="swatch node-s"></span>Nodo</li>
             <li><span class="swatch edge-s"></span>Arista</li>
@@ -162,12 +161,12 @@
             @if (!versionId()) { <p class="hint">Selecciona un piso con un plano cargado para crear el borrador.</p> }
           </div>
         } @else {
-          <p class="hint tool-hint" role="status">{{ editor.feedback() ?? toolHint() }}</p>
-          <app-graph-canvas [nodes]="editor.floorNodes()" [connections]="editor.floorConnections()"
-            [destinations]="editor.graph().destinations" [plan]="editor.plan()" [tool]="editor.tool()"
-            [selection]="editor.selection()" [pendingFrom]="editor.pendingFrom()" [backdrop]="backdrop()"
-            (canvasPoint)="editor.canvasClick($event.x, $event.y)" (nodePicked)="editor.nodeClick($event)"
-            (connectionPicked)="editor.connectionClick($event)" (nodeMoved)="editor.moveTo($event.id, $event.x, $event.y)" />
+          <p class="hint tool-hint" role="status">{{ activeEditor().feedback() ?? toolHint() }}</p>
+          <app-graph-canvas [nodes]="activeEditor().floorNodes()" [connections]="activeEditor().floorConnections()"
+            [destinations]="activeEditor().graph().destinations" [plan]="activeEditor().plan()" [tool]="activeEditor().tool()"
+            [selection]="activeEditor().selection()" [pendingFrom]="activeEditor().pendingFrom()" [backdrop]="backdrop()"
+            (canvasPoint)="canvasPoint($event.x, $event.y)" (nodePicked)="nodePicked($event)"
+            (connectionPicked)="connectionPicked($event)" (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)" />
           <ul class="legend" aria-label="Leyenda">
             <li><span class="swatch dot access"></span>Acceso</li>
             <li><span class="swatch dot dest"></span>Destino</li>
@@ -192,8 +191,7 @@
         </div>
 
         @if (tab() === 'properties') {
-          @if (proposal()) {
-            @if (selectedZone(); as zone) {
+          @if (selectedZone(); as zone) {
               <h2>Ambiente reconocido</h2>
               <p class="mono id">ID: {{ zone.id }}</p>
               <form [formGroup]="zoneForm" (ngSubmit)="applyZoneCorrection()">
@@ -216,39 +214,7 @@
                 <p class="warn-box">Ninguna conexión reconocida llega a este ambiente.</p>
               }
               <p class="hint">Al aplicar la propuesta, los consultorios y servicios con nombre se crean como destinos, y los ascensores y escaleras como conexiones verticales.</p>
-            } @else if (summary(); as counts) {
-              <h2>Resumen de la propuesta</h2>
-              <dl>
-                <dt>Ambientes</dt><dd>{{ counts.zones }}</dd>
-                <dt>Sin etiqueta</dt><dd>{{ unlabeled().length }}</dd>
-                <dt>Nodos</dt><dd>{{ counts.nodes }}</dd>
-                <dt>Conexiones</dt><dd>{{ counts.connections }}</dd>
-                <dt>Muros candidatos</dt><dd>{{ counts.walls }}</dd>
-                <dt>Puertas</dt><dd>{{ counts.doors }}</dd>
-                <dt>Sin conexión</dt><dd>{{ isolated().length }}</dd>
-              </dl>
-              <h3>Ambientes</h3>
-              <ul class="items">
-                @for (zone of proposal()?.zones ?? []; track zone.id) {
-                  <li><button type="button" (click)="selectZone(zone.id)">
-                    <span>{{ zone.name }}</span><small>{{ categoryName(zone.category) }}{{ isIsolated(zone.id) ? ' · sin conexión' : '' }}</small>
-                  </button></li>
-                }
-              </ul>
-              <h3>Red de recorridos</h3>
-              @if ((proposal()?.connections ?? []).length === 0) {
-                <p class="hint">No se reconoció ninguna conexión entre ambientes.</p>
-              } @else {
-                <ul class="items">
-                  @for (link of proposal()?.connections ?? []; track link.id) {
-                    <li><button type="button" [class.active]="link.id === selectedLinkId()" (click)="selectLink(link.id)">
-                      <span>{{ labelOf(link.fromNodeId) }} ↔ {{ labelOf(link.toNodeId) }}</span><small>{{ link.distanceUnits }} u</small>
-                    </button></li>
-                  }
-                </ul>
-              }
-            }
-          } @else if (editor.selectedNode(); as node) {
+          } @else if (activeEditor().selectedNode(); as node) {
             <h2>Propiedades del nodo</h2>
             <p class="mono id">ID: {{ node.id }}</p>
             <form [formGroup]="nodeForm" (ngSubmit)="applyNode()">
@@ -277,10 +243,10 @@
                 </fieldset>
               }
               <button type="submit" class="primary">Aplicar cambios</button>
-              <button type="button" class="outline danger" (click)="editor.deleteSelection()">Eliminar nodo</button>
-              <button type="button" (click)="editor.select(null)">Deseleccionar</button>
+              <button type="button" class="outline danger" (click)="deleteSelected()">Eliminar nodo</button>
+              <button type="button" (click)="activeEditor().select(null)">Deseleccionar</button>
             </form>
-          } @else if (editor.selectedConnection(); as link) {
+          } @else if (activeEditor().selectedConnection(); as link) {
             <h2>Propiedades de la arista</h2>
             <p class="mono id">ID: {{ link.id }}</p>
             <form [formGroup]="connectionForm" (ngSubmit)="applyConnection()">
@@ -301,16 +267,38 @@
                 </select>
               </label>
               <label class="check"><input type="checkbox" formControlName="bidirectional" /> Se puede recorrer en ambos sentidos</label>
+              <div class="reconnect-actions" aria-label="Reconectar arista">
+                <button type="button" class="outline" (click)="beginReconnect('source')">Reconectar origen</button>
+                <button type="button" class="outline" (click)="beginReconnect('target')">Reconectar destino</button>
+              </div>
+              @if (activeEditor().reconnecting()) { <p class="hint" role="status">{{ activeEditor().feedback() }}</p> }
               <button type="submit" class="primary">Aplicar cambios</button>
-              <button type="button" class="outline danger" (click)="editor.deleteSelection()">Eliminar arista</button>
-              <button type="button" (click)="editor.select(null)">Deseleccionar</button>
+              <button type="button" class="outline danger" (click)="deleteSelected()">Eliminar arista</button>
+              <button type="button" (click)="activeEditor().select(null)">Deseleccionar</button>
             </form>
+          } @else if (summary(); as counts) {
+            <h2>Resumen de la propuesta</h2>
+            <dl>
+              <dt>Ambientes</dt><dd>{{ counts.zones }}</dd>
+              <dt>Sin etiqueta</dt><dd>{{ unlabeled().length }}</dd>
+              <dt>Nodos</dt><dd>{{ counts.nodes }}</dd>
+              <dt>Conexiones</dt><dd>{{ counts.connections }}</dd>
+              <dt>Muros candidatos</dt><dd>{{ counts.walls }}</dd>
+              <dt>Puertas</dt><dd>{{ counts.doors }}</dd>
+              <dt>Sin conexión</dt><dd>{{ isolated().length }}</dd>
+            </dl>
+            <h3>Ambientes</h3>
+            <ul class="items">
+              @for (zone of proposal()?.zones ?? []; track zone.id) {
+                <li><button type="button" (click)="selectZone(zone.id)">{{ zone.name }}</button></li>
+              }
+            </ul>
           } @else {
             <h2>Borrador</h2>
             <dl>
-              <dt>Nodos</dt><dd>{{ editor.graph().nodes.length }}</dd>
-              <dt>Aristas</dt><dd>{{ editor.graph().connections.length }}</dd>
-              <dt>Destinos</dt><dd>{{ editor.graph().destinations.length }}</dd>
+              <dt>Nodos</dt><dd>{{ activeEditor().graph().nodes.length }}</dd>
+              <dt>Aristas</dt><dd>{{ activeEditor().graph().connections.length }}</dd>
+              <dt>Destinos</dt><dd>{{ activeEditor().graph().destinations.length }}</dd>
             </dl>
             <p class="hint">Selecciona un nodo o una arista para editar sus propiedades.</p>
           }
@@ -326,13 +314,30 @@
           } @else if (graphAlerts().length === 0) {
             <p class="hint">Sin alertas: el borrador cumple las reglas de publicación.</p>
           } @else {
+            <div class="alerts-summary" role="status">
+              <strong>{{ graphErrorCount() }} errores bloqueantes en el modelo</strong>
+              <span>Revisa los elementos señalados antes de publicar.</span>
+            </div>
+            @if (reachability().total > 0 && reachability().percent < 100) {
+              <div class="connectivity-summary">
+                <strong>Alcance de destinos <span>{{ reachability().percent }}%</span></strong>
+                <div class="connectivity-meter" role="progressbar" [attr.aria-valuenow]="reachability().percent" aria-valuemin="0" aria-valuemax="100" aria-label="Destinos alcanzables"><span [style.width.%]="reachability().percent"></span></div>
+                <small>{{ reachability().reachable }} de {{ reachability().total }} destinos tienen acceso desde los nodos de entrada.</small>
+              </div>
+            }
             <ul class="alerts">
               @for (alert of graphAlerts(); track $index) {
                 <li [class.error]="alert.severity === 'error'">
-                  <button type="button" class="alert-item" (click)="focusAlert(alert)"
-                    [disabled]="!alert.elementId || (alert.elementType !== 'NODE' && alert.elementType !== 'CONNECTION')">
-                    <span aria-hidden="true">{{ alert.severity === 'error' ? '⛔' : '⚠' }}</span> {{ alert.message }}
-                  </button>
+                  <div class="alert-header"><span aria-hidden="true">{{ alert.severity === 'error' ? '⊗' : '⚠' }}</span>
+                    <strong>{{ alertHeading(alert) }}</strong><small>CÓDIGO: {{ alert.code }}</small></div>
+                  <p>{{ alert.message }}</p>
+                  @if (alert.elementId) { <span class="alert-location">{{ alert.elementType === 'NODE' ? 'Nodo' : 'Arista' }}: {{ alert.elementId }}</span> }
+                  @if (alert.elementId && (alert.elementType === 'NODE' || alert.elementType === 'CONNECTION')) {
+                    <button type="button" class="locate-button" (click)="focusAlert(alert)">⌗ Ubicar y corregir</button>
+                  }
+                  @if (canExtendTo(alert)) {
+                    <button type="button" class="repair-button" (click)="extendTo(alert)">⌁ Extender arista</button>
+                  }
                 </li>
               }
             </ul>
