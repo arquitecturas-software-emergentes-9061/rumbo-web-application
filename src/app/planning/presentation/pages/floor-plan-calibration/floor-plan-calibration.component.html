@@ -1,8 +1,7 @@
 <app-admin-shell [context]="siteName()">
-  <div class="breadcrumbs">
-    <a routerLink="/admin">Panel</a><span aria-hidden="true">›</span> Mapas
-    @if (siteName()) { <span aria-hidden="true">›</span> {{ siteName() }} }
-  </div>
+  <app-map-section-navigation active="plan" [siteName]="siteName()" [siteId]="siteId()"
+    [floors]="floors()" [floorId]="floorId()" [floorDisabled]="step() === 2 || pending() === 'Cargando archivo…'"
+    (floorSelected)="chooseFloor($event)" />
   <header class="page-heading">
     <h1>Carga y calibración de planos</h1>
     <p>Administra los planos de tus pisos y define su escala para la navegación indoor.</p>
@@ -14,15 +13,6 @@
         [disabled]="!sites().length || step() === 2 || pending() === 'Cargando archivo…'">
         <option value="">Selecciona una sede</option>
         @for (item of sites(); track item.id) {
-          <option [value]="item.id">{{ item.name }}</option>
-        }
-      </select>
-    </label>
-    <label>Piso
-      <select #floor [value]="floorId()" (change)="chooseFloor(floor.value)"
-        [disabled]="!floors().length || step() === 2 || pending() === 'Cargando archivo…'">
-        <option value="">Selecciona un piso</option>
-        @for (item of floors(); track item.id) {
           <option [value]="item.id">{{ item.name }}</option>
         }
       </select>

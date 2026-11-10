@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, HostListener, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subject, catchError, finalize, of, switchMap } from 'rxjs';
 import { Floor, Site } from '../../../domain/model/site-floor.model';
 import { SITES_PORT } from '../../../application/planning.ports';
@@ -10,6 +10,7 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
 import { PlanVersion } from '../../../application/floor-plan.contracts';
 import { FLOOR_PLANS_PORT } from '../../../application/planning.ports';
 import { GraphCanvasComponent } from './graph-canvas.component';
+import { MapSectionNavigationComponent } from '../../components/map-section-navigation/map-section-navigation.component';
 import { destinationReachability, repairOrigin } from '../../../domain/model/graph-reachability';
 import { GraphEditorState, Tool } from '../../../application/graph-editor-state';
 import { proposalWithGraph, unresolvedProposalConnections,
@@ -39,7 +40,7 @@ const EMPTY_PROPOSAL: ModelProposal = { zones: [], nodes: [], connections: [], w
 
 @Component({
   selector: 'app-map-editor',
-  imports: [AdminShellComponent, ReactiveFormsModule, RouterLink, GraphCanvasComponent],
+  imports: [AdminShellComponent, MapSectionNavigationComponent, ReactiveFormsModule, RouterLink, GraphCanvasComponent],
   templateUrl: './map-editor.component.html',
   styleUrl: './map-editor.component.css',
   host: { class: 'map-editor-page' }
@@ -50,6 +51,8 @@ export class MapEditorComponent implements OnInit {
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly sitesApi = inject(SITES_PORT);
   private readonly plansApi = inject(FLOOR_PLANS_PORT);
+  private readonly route = inject(ActivatedRoute);
+  private initialFloorId = this.route.snapshot.queryParamMap.get('floorId');
   private readonly generateModel = inject(GenerateModelUseCase);
   private readonly draftApi = inject(MAP_EDITOR_PORT);
   private readonly destroyRef = inject(DestroyRef);
@@ -141,7 +144,6 @@ export class MapEditorComponent implements OnInit {
   });
 
   readonly site = computed(() => this.sites().find(item => item.id === this.siteId()) ?? null);
-  readonly floor = computed(() => this.floors().find(item => item.id === this.floorId()) ?? null);
   readonly version = computed(() => this.versions().find(item => item.id === this.versionId()) ?? null);
   readonly canGenerate = computed(() => this.version() !== null && !this.generating());
   readonly blockedReason = computed(() => {
@@ -343,7 +345,9 @@ export class MapEditorComponent implements OnInit {
     this.sitesApi.loadSites().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: sites => {
         this.sites.set(sites);
-        this.selectSite(sites.find(item => item.id === this.siteId())?.id ?? sites[0]?.id ?? null, true);
+        const requestedSite = this.route.snapshot.queryParamMap.get('siteId');
+        this.selectSite(sites.find(item => item.id === this.siteId())?.id
+          ?? sites.find(item => item.id === requestedSite)?.id ?? sites[0]?.id ?? null, true);
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
@@ -355,6 +359,8 @@ export class MapEditorComponent implements OnInit {
 
   selectSite(id: string | null, force = false): void {
     if (!force && id !== this.siteId() && !this.confirmDiscard()) return;
+    const preferredFloorId = this.floorId() ?? this.initialFloorId;
+    this.initialFloorId = null;
     this.clearAlertHighlight();
     this.siteId.set(id);
     this.floors.set([]);
@@ -374,7 +380,7 @@ export class MapEditorComponent implements OnInit {
       next: floors => {
         const sorted = [...floors].sort((a, b) => a.number - b.number);
         this.floors.set(sorted);
-        this.selectFloor(sorted[0]?.id ?? null);
+        this.selectFloor(sorted.find(floor => floor.id === preferredFloorId)?.id ?? sorted[0]?.id ?? null);
       },
       error: (error: HttpErrorResponse) => {
         this.loading.set(false);
