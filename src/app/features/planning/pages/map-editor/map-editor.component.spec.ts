@@ -110,6 +110,19 @@ describe('MapEditorComponent', () => {
     expect(component.connectionLine(proposal.connections[0])).toEqual({ x1: 50, y1: 60, x2: 50, y2: 90 });
   });
 
+  it('explains a rejected route without raw IDs and locates its candidate midpoint', () => {
+    const fixture = create([svg]);
+    plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, connections: [],
+      warnings: ['Conexión candidata n1–n2: atraviesa un muro; revisa el plano'] } })));
+    component.generate(); fixture.detectChanges();
+    expect(component.alerts()[0]).toContain('entre nodo 1 y nodo 2');
+    expect(component.alerts()[0]).not.toContain('n1–n2');
+    const warning = [...fixture.nativeElement.querySelectorAll('.alerts .alert-item')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('entre nodo 1 y nodo 2')) as HTMLButtonElement;
+    warning.click(); fixture.detectChanges();
+    expect(component.highlightedPoint()).toEqual({ x: 50, y: 75 });
+  });
+
   it('shows every recognized layer and retains a conflicting wall for correction after applying', () => {
     const fixture = create([svg]);
     const detected = { zones: [{ id: 'room', name: 'Sala', category: 'ROOM', x: 0, y: 0, width: 20, height: 20 }],
@@ -299,6 +312,28 @@ describe('MapEditorComponent', () => {
     expect(component.proposal()).toBeNull();
     expect(component.editor.graph().nodes).toHaveLength(3);
     expect(component.editor.dirty()).toBe(true);
+  });
+
+  it('discards the complete generated preview without changing or saving the draft', () => {
+    const fixture = create([svg]);
+    const originalDraft = component.editor.graph();
+    component.generate(); fixture.detectChanges();
+    expect(component.previewEditor.graph().nodes).not.toHaveLength(0);
+    expect(component.previewEditor.graph().walls).not.toHaveLength(0);
+    expect(component.proposalAlerts().length).toBeGreaterThan(0);
+
+    const discard = [...fixture.nativeElement.querySelectorAll('.proposal-bar button')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('Descartar')) as HTMLButtonElement;
+    discard.click(); fixture.detectChanges();
+
+    expect(component.proposal()).toBeNull();
+    expect(component.previewEditor.graph().nodes).toHaveLength(0);
+    expect(component.previewEditor.graph().walls ?? []).toHaveLength(0);
+    expect(component.unadoptedGeometry()).toEqual({ wallCandidates: [], doors: [] });
+    expect(component.proposalAlerts()).toHaveLength(0);
+    expect(component.editor.graph()).toBe(originalDraft);
+    expect(component.editor.dirty()).toBe(false);
+    expect(drafts.save).not.toHaveBeenCalled();
   });
 
   describe('draft editing', () => {

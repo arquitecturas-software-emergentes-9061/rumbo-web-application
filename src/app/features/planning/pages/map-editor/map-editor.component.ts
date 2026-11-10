@@ -153,7 +153,9 @@ export class MapEditorComponent implements OnInit {
   readonly proposalAlerts = computed<ProposalAlert[]>(() => {
     const current = this.proposal();
     if (!current) return [];
-    const list: ProposalAlert[] = current.warnings.map(message => ({ message, target: this.warningTarget(current, message) }));
+    const list: ProposalAlert[] = current.warnings.map(message => ({
+      message: this.readableWarning(current, message), target: this.warningTarget(current, message)
+    }));
     for (const id of this.unresolvedConnections()) {
       const number = current.connections.findIndex(connection => connection.id === id) + 1;
       const connection = current.connections.find(item => item.id === id);
@@ -183,7 +185,27 @@ export class MapEditorComponent implements OnInit {
     return list;
   });
   readonly alerts = computed(() => this.proposalAlerts().map(alert => alert.message));
+  private readableWarning(proposal: ModelProposal, warning: string): string {
+    const edge = /^Conexión candidata ([^\s–]+)–([^\s:]+):/.exec(warning);
+    if (edge) {
+      const source = proposal.nodes.findIndex(node => node.id === edge[1]);
+      const target = proposal.nodes.findIndex(node => node.id === edge[2]);
+      if (source >= 0 && target >= 0) warning = warning.replace(edge[0],
+        `Conexión candidata entre nodo ${source + 1} y nodo ${target + 1}:`);
+    }
+    for (const [index, door] of (proposal.doors ?? []).entries())
+      warning = warning.replaceAll(`Puerta ${door.id}`, `Puerta ${index + 1}`);
+    for (const zone of proposal.zones)
+      warning = warning.replaceAll(`Zona ${zone.id}`, `Ambiente «${zone.name}»`);
+    return warning;
+  }
   private warningTarget(proposal: ModelProposal, warning: string): AlertTarget {
+    const edge = /^Conexión candidata ([^\s–]+)–([^\s:]+):/.exec(warning);
+    if (edge) {
+      const from = proposal.nodes.find(node => node.id === edge[1]);
+      const to = proposal.nodes.find(node => node.id === edge[2]);
+      if (from && to) return { kind: 'point', x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    }
     const zone = proposal.zones.find(item => warning.includes(item.id) || warning.includes(item.name));
     if (zone) return { kind: 'zone', id: zone.id };
     const door = proposal.doors?.find(item => warning.includes(item.id));
