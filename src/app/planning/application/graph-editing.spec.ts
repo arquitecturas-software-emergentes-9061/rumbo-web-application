@@ -1,5 +1,5 @@
 import {
-  nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, removeConnection,
+  nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, reconcileDestinations, removeConnection,
   removeNode, updateConnection, updateNodeType, upsertDestination
 } from '../domain/model/graph-model';
 import { countErrors, fromServerIssues, validateGraph } from '../domain/model/graph-validation';
@@ -76,11 +76,10 @@ describe('graph editing operations', () => {
       connections: [{ id: 'k', fromNodeId: 'p1', toNodeId: 'p2', distanceUnits: 20 }, { id: 'bad', fromNodeId: 'p1', toNodeId: 'nope', distanceUnits: 1 }]
     };
     const next = applyProposal(base, proposal, plan, () => `id-${++counter}`);
-    // 'a' and 'b' are replaced; the destination 'c' and the node of another floor survive. The
-    // proposal node next to 'c' is merged into it, so only one new node is created.
-    expect(next.nodes.map(node => node.id).sort()).toEqual(['c', 'id-1', 'keep']);
+    // An unlabeled candidate cannot claim the saved destination merely by sharing coordinates.
+    expect(next.nodes.map(node => node.id).sort()).toEqual(['c', 'id-1', 'id-2', 'keep']);
     expect(next.connections).toHaveLength(1);
-    expect(next.connections[0]).toMatchObject({ type: 'DOORWAY', distanceMeters: 10, targetNodeId: 'c' });
+    expect(next.connections[0]).toMatchObject({ type: 'DOORWAY', distanceMeters: 10, targetNodeId: 'id-2' });
     expect(next.destinations.map(entry => entry.nodeId)).toEqual(['c']);
   });
 
@@ -93,7 +92,7 @@ describe('graph editing operations', () => {
     expect(codes(next)).toContain('MISSING_ACCESS');
   });
 
-  it('reuses a kept destination when a proposal node lands next to it', () => {
+  it('does not reassign a destination from coordinate proximity alone', () => {
     const proposal = {
       zones: [], wallCandidates: [], warnings: [],
       nodes: [{ id: 'p1', label: 'N1', x: 20.5, y: 0.5 }, { id: 'p2', label: 'N2', x: 60, y: 0 }],
@@ -102,10 +101,45 @@ describe('graph editing operations', () => {
     let counter = 0;
     const next = applyProposal(build(), proposal, plan, () => `id-${++counter}`);
     expect(next.nodes.filter(node => node.type === 'DESTINATION')).toHaveLength(1);
-    expect(next.nodes).toHaveLength(2);
+    expect(next.nodes).toHaveLength(3);
     expect(next.connections).toHaveLength(1);
-    expect(next.connections[0]).toMatchObject({ sourceNodeId: 'c', type: 'DOORWAY' });
+    expect(next.connections[0]).toMatchObject({ sourceNodeId: 'id-1', type: 'DOORWAY' });
     expect(next.destinations[0].nodeId).toBe('c');
+  });
+
+  it('reconciles one named room and keeps the destination identity, type and specialty', () => {
+    const current = upsertDestination(build(), 'c', { type: 'SPECIALTY', name: 'Cajá', specialty: 'Admisión' });
+    const nextPlan = { ...plan, planVersionId: 'p-new' };
+    const proposal = {
+      zones: [{ id: 'room', name: '  CAJA ', category: 'ROOM', x: 65, y: 5, width: 10, height: 10 }],
+      nodes: [{ id: 'room', role: 'ROOM', label: 'CAJA', x: 70, y: 10 },
+        { id: 'entry', role: 'ENTRANCE', label: 'Ingreso', x: 0, y: 10 }],
+      connections: [{ id: 'link', fromNodeId: 'entry', toNodeId: 'room', distanceUnits: 70 }],
+      wallCandidates: [], warnings: []
+    };
+    expect(reconcileDestinations(current, proposal, nextPlan).unresolved).toEqual([]);
+    let counter = 0;
+    const next = applyProposal(current, proposal, nextPlan, () => `id-${++counter}`);
+    expect(next.nodes.find(node => node.id === 'c')).toMatchObject({ x: 70, y: 10, planVersionId: 'p-new' });
+    expect(next.destinations).toEqual([{ id: 'd1', nodeId: 'c', type: 'SPECIALTY', name: 'Cajá', specialty: 'Admisión' }]);
+    expect(next.connections).toEqual([expect.objectContaining({ targetNodeId: 'c', distanceMeters: 35 })]);
+  });
+
+  it('leaves duplicate room labels unresolved instead of guessing the destination', () => {
+    const proposal = {
+      zones: [{ id: 'r1', name: 'Caja', category: 'ROOM', x: 0, y: 0, width: 10, height: 10 },
+        { id: 'r2', name: 'Caja', category: 'ROOM', x: 20, y: 0, width: 10, height: 10 }],
+      nodes: [{ id: 'r1', role: 'ROOM', label: 'Caja', x: 1, y: 1 },
+        { id: 'r2', role: 'ROOM', label: 'Caja', x: 21, y: 1 }],
+      connections: [], wallCandidates: [], warnings: []
+    };
+    const review = reconcileDestinations(build(), proposal, plan);
+    expect(review.matches.size).toBe(0);
+    expect(review.unresolved.map(entry => entry.id)).toEqual(['d1']);
+    expect(review.ambiguous.map(entry => entry.id)).toEqual(['d1']);
+    const next = applyProposal(build(), proposal, plan, () => crypto.randomUUID());
+    expect(next.nodes.find(node => node.id === 'c')).toMatchObject({ x: 20, y: 0 });
+    expect(next.destinations.find(entry => entry.id === 'd1')?.name).toBe('Caja');
   });
 });
 

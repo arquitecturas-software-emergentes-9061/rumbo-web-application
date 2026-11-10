@@ -537,6 +537,40 @@ describe('MapEditorComponent', () => {
       expect(component.editor.graph().nodes).toHaveLength(0);
     });
 
+    it('keeps saved destinations untouched when the selected original differs from the draft plan version', () => {
+      const saved = { nodes: [{ id: 'room', floorId: 'floor', planVersionId: 'pv', x: 20, y: 20, type: 'DESTINATION' }],
+        connections: [], destinations: [{ id: 'destination', nodeId: 'room', type: 'SERVICE', name: 'Caja', specialty: null }] };
+      drafts.load.mockReturnValue(of(draft(0.5, saved)));
+      create([svg]);
+      plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED' })));
+      component.generate();
+      component.applyProposal();
+      expect(component.notice()).toContain('otra versión');
+      expect(component.proposal()).not.toBeNull();
+      expect(component.editor.graph()).toMatchObject(saved);
+    });
+
+    it('requires review before assigning one saved destination to duplicate room labels', () => {
+      const saved = { nodes: [{ id: 'room', floorId: 'floor', planVersionId: 'pv', x: 20, y: 20, type: 'DESTINATION' }],
+        connections: [], destinations: [{ id: 'destination', nodeId: 'room', type: 'SERVICE', name: 'Caja', specialty: null }] };
+      drafts.load.mockReturnValue(of(draft(0.5, saved)));
+      create([{ ...svg, id: 'pv' }]);
+      const zones = [
+        { id: 'r1', name: 'Caja', category: 'ROOM', x: 0, y: 0, width: 20, height: 20 },
+        { id: 'r2', name: 'Caja', category: 'ROOM', x: 30, y: 0, width: 20, height: 20 }
+      ];
+      plans.interpret.mockReturnValue(of(result({ versionId: 'pv', scaleStatus: 'CONFIRMED', proposal: {
+        zones, nodes: [{ id: 'r1', role: 'ROOM', label: 'Caja', x: 10, y: 10 },
+          { id: 'r2', role: 'ROOM', label: 'Caja', x: 40, y: 10 }],
+        connections: [], wallCandidates: [], warnings: []
+      } })));
+      component.generate();
+      component.applyProposal();
+      expect(component.notice()).toContain('nombres repetidos');
+      expect(component.proposal()).not.toBeNull();
+      expect(component.editor.graph()).toMatchObject(saved);
+    });
+
     it('creates the first draft when applying a proposal to a site without one', () => {
       drafts.load.mockReturnValue(of(null));
       drafts.createFirstDraft.mockReturnValue(of(draft(0.5)));
