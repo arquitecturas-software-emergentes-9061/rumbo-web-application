@@ -3,7 +3,7 @@ import { GraphConnection, GraphNode } from '../interfloor-connections/draft-grap
 import { Destination, PlanBounds, MapWall, MapDoor } from '../../domain/model/map-graph.types';
 import { doorSegment } from '../../domain/model/map-geometry';
 import { Selection, Tool } from '../../application/graph-editor-state';
-import { ModelProposal, polygonPath, zoneFill, zonePath } from './model-preview';
+import { ModelProposal, polygonPath, viewBoxFor, zoneFill, zonePath } from './model-preview';
 
 interface DragState { id: string; x: number; y: number; moved: boolean }
 
@@ -32,7 +32,12 @@ export class GraphCanvasComponent {
   /** Rooms and walls of the last applied model, drawn read-only behind the graph for context. */
   readonly backdrop = input<ModelProposal | null>(null);
   readonly interactiveZones = input(false);
+  readonly showSourceGeometry = input(true);
   readonly selectedZoneId = input<string | null>(null);
+  readonly highlightedWallCandidate = input<number | null>(null);
+  readonly highlightedDoorCandidate = input<number | null>(null);
+  readonly highlightedPlan = input(false);
+  readonly highlightedPoint = input<{ x: number; y: number } | null>(null);
   protected readonly zoom = signal(1);
   private readonly center = signal<{ x: number; y: number } | null>(null);
 
@@ -63,10 +68,14 @@ export class GraphCanvasComponent {
   protected readonly viewBox = computed(() => {
     const plan = this.plan();
     if (!plan) return '0 0 100 100';
-    const zoom = this.zoom(), width = plan.widthUnits / zoom, height = plan.heightUnits / zoom;
-    const center = this.center() ?? { x: plan.widthUnits / 2, y: plan.heightUnits / 2 };
-    const x = Math.min(Math.max(center.x - width / 2, 0), plan.widthUnits - width);
-    const y = Math.min(Math.max(center.y - height / 2, 0), plan.heightUnits - height);
+    const base = this.interactiveZones() && this.backdrop() ? viewBoxFor({ ...this.backdrop()!,
+      wallCandidates: [...this.backdrop()!.wallCandidates, ...this.walls()],
+      doors: [...(this.backdrop()!.doors ?? []), ...this.doorLines().map(entry => ({ id: entry.door.id, ...entry.segment }))] })
+      : { x: 0, y: 0, width: plan.widthUnits, height: plan.heightUnits };
+    const zoom = this.zoom(), width = base.width / zoom, height = base.height / zoom;
+    const center = this.center() ?? { x: base.x + base.width / 2, y: base.y + base.height / 2 };
+    const x = Math.min(Math.max(center.x - width / 2, base.x), base.x + base.width - width);
+    const y = Math.min(Math.max(center.y - height / 2, base.y), base.y + base.height - height);
     return `${x} ${y} ${width} ${height}`;
   });
 
@@ -130,7 +139,7 @@ export class GraphCanvasComponent {
   protected nodeDown(event: PointerEvent, node: GraphNode): void {
     event.stopPropagation();
     const tool = this.tool();
-    if (tool !== 'select' && tool !== 'move') return;
+    if (tool !== 'select') return;
     (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
     this.drag.set({ id: node.id, x: node.x, y: node.y, moved: false });
   }
@@ -149,7 +158,7 @@ export class GraphCanvasComponent {
   }
 
   protected geometryDown(event: PointerEvent, kind: 'wall' | 'door', id: string): void {
-    if (this.tool() !== 'select' && this.tool() !== 'move') return;
+    if (this.tool() !== 'select') return;
     const point = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
     if (!point) return;
     event.stopPropagation();
@@ -196,16 +205,15 @@ export class GraphCanvasComponent {
     event.stopPropagation();
     const current = this.drag();
     this.drag.set(null);
-    if (current?.moved && this.tool() === 'move') this.nodeMoved.emit({ id: node.id, x: current.x, y: current.y });
-    else if (current?.moved) this.nodeMoved.emit({ id: node.id, x: current.x, y: current.y });
+    if (current?.moved) this.nodeMoved.emit({ id: node.id, x: current.x, y: current.y });
     else this.nodePicked.emit(node.id);
   }
 
   protected nodeClicked(event: MouseEvent, node: GraphNode): void {
     event.stopPropagation();
     const tool = this.tool();
-    // Pointer interactions already handled select/move; other tools act on a plain click.
-    if (tool !== 'select' && tool !== 'move') this.nodePicked.emit(node.id);
+    // Pointer interactions already handled selection and dragging; other tools act on a plain click.
+    if (tool !== 'select') this.nodePicked.emit(node.id);
   }
 
   protected nodeKey(event: KeyboardEvent, node: GraphNode): void {

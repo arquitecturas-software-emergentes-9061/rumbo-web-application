@@ -11,7 +11,7 @@ import { GraphAlert, validateGraph } from '../domain/model/graph-validation';
 import { ModelProposal } from '../domain/model/plan-interpretation';
 import { ConnectionEnd, reconnectConnection } from '../domain/model/reconnect-connection';
 
-export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'move' | 'reconnect' | 'wall' | 'door';
+export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'reconnect' | 'wall' | 'door';
 export type Selection = { kind: 'node' | 'connection' | 'wall' | 'door'; id: string };
 
 const REJECTIONS: Record<ConnectionRejection, string> = {
@@ -215,15 +215,19 @@ export class GraphEditorState {
     this.reconnecting.set(null);
   }
 
-  applyGenerated(proposal: ModelProposal): boolean {
+  applyGenerated(proposal: ModelProposal, editedGeometry?: Pick<EditorGraph, 'walls' | 'doors'>): boolean {
     const plan = this.plan();
     if (!plan || plan.metersPerUnit === null) return false;
     const generated = applyProposal(this.graph(), proposal, plan, this.newId);
     const walls = (this.graph().walls ?? []).filter(wall => wall.floorId !== plan.floorId);
     const retainedIds = new Set(walls.map(wall => wall.id));
     const doors = (this.graph().doors ?? []).filter(door => retainedIds.has(door.wallId));
-    const geometry = proposalGeometry(proposal, plan, { ...generated, walls, doors }, this.newId);
-    this.commit({ ...generated, ...geometry });
+    const geometry = editedGeometry ? {
+      walls: [...walls, ...(editedGeometry.walls ?? []).map(wall => ({ ...wall,
+        floorId: plan.floorId, planVersionId: plan.planVersionId }))],
+      doors: [...doors, ...(editedGeometry.doors ?? [])]
+    } : proposalGeometry(proposal, plan, { ...generated, walls, doors }, this.newId);
+    this.commit({ ...generated, walls: geometry.walls, doors: geometry.doors });
     this.selection.set(null);
     return true;
   }

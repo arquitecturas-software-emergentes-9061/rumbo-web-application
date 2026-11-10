@@ -88,7 +88,10 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .danger { color: var(--error); border-color: #e0b4b5; }
 .warn-box { margin: 8px 16px; padding: 8px 10px; font-size: .84rem; color: var(--warning); background: var(--warning-bg); border: 1px solid #ead6ad; border-radius: var(--control-radius); }
 .alerts li.error { background: var(--error-bg); border-color: #e0b4b5; color: var(--error); }
-.alert-item { display: block; width: 100%; min-height: 0; padding: 0; text-align: left; color: inherit; border: 0; background: transparent; font-size: .84rem; }
+.alert-item { display: block; width: 100%; min-height: 0; padding: 0; text-align: left; color: inherit; border: 0; background: transparent; font-size: .84rem; cursor: pointer; }
+.alert-item:hover { text-decoration: underline; }
+.alert-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.alert-item .alert-header, .alert-item .alert-location { display: block; }
 .alert-item:disabled { cursor: default; color: inherit; background: transparent; }
 
 .door { stroke: #c77700; stroke-linecap: butt; }

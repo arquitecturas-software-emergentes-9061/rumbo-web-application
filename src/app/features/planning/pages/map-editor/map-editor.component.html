@@ -81,7 +81,7 @@
       <p class="hint" role="status">{{ reason }}</p>
     }
     @if (editor.geometryError(); as geometryError) {
-      <p class="alert" role="alert">{{ geometryError }} Corrige el muro, la puerta o el tipo de arista antes de guardar.</p>
+      <p class="alert" role="alert">{{ geometryError }}</p>
     }
     @if (notice(); as message) {
       <p class="notice" role="status">{{ message }}</p>
@@ -105,8 +105,8 @@
         <div class="tools" role="toolbar" aria-label="Herramientas de edición" aria-orientation="vertical">
           @for (item of tools; track item.id) {
             <button type="button" [class.active]="activeEditor().tool() === item.id" [attr.aria-pressed]="activeEditor().tool() === item.id"
-              [title]="proposal() && (item.id === 'wall' || item.id === 'door') ? 'Aplica la propuesta al borrador para editar la geometría' : item.hint"
-              [disabled]="item.disabled || (!draft() && !proposal()) || (!!proposal() && (item.id === 'wall' || item.id === 'door'))"
+              [title]="item.hint"
+              [disabled]="item.disabled || (!draft() && !proposal())"
               (click)="chooseTool(item.id)">
               <span class="tool-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -117,7 +117,6 @@
                     @case ('wall') { <rect x="4" y="6" width="16" height="12" /><path d="M4 12h16M10 6v6m5 0v6" /> }
                     @case ('door') { <path d="M5 20V4h11v16H5Zm11-13a8 8 0 0 1 5 8" /><circle cx="13" cy="12" r=".7" /> }
                     @case ('destination') { <path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12Z" /><circle cx="12" cy="9" r="2" /> }
-                    @case ('move') { <path d="M6 13V9a1.5 1.5 0 0 1 3 0v3-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v5-3a1.5 1.5 0 0 1 3 0v7c0 3-2 5-5 5h-3c-2 0-3-1-4-3l-2-4a1.5 1.5 0 0 1 2-2l2 2" /> }
                   }
                 </svg>
               </span><span>{{ item.label }}</span>
@@ -141,8 +140,10 @@
           <app-graph-canvas [nodes]="previewEditor.floorNodes()" [connections]="previewEditor.floorConnections()"
             [walls]="previewEditor.floorWalls()" [doors]="previewEditor.floorDoors()"
             [destinations]="previewEditor.graph().destinations" [plan]="previewEditor.plan()" [tool]="previewEditor.tool()"
-            [selection]="previewEditor.selection()" [pendingFrom]="previewEditor.pendingFrom()" [backdrop]="current"
+            [selection]="previewEditor.selection()" [pendingFrom]="previewEditor.pendingFrom()" [backdrop]="previewBackdrop()"
             [interactiveZones]="true" [selectedZoneId]="selectedZoneId()"
+            [highlightedPoint]="highlightedPoint()" [highlightedPlan]="highlightedPlan()"
+            [highlightedWallCandidate]="highlightedWallCandidate()" [highlightedDoorCandidate]="highlightedDoorCandidate()"
             (zonePicked)="selectZone($event)" (canvasPoint)="canvasPoint($event.x, $event.y)"
             (nodePicked)="nodePicked($event)" (connectionPicked)="connectionPicked($event)"
             (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)"
@@ -181,6 +182,9 @@
             [walls]="activeEditor().floorWalls()" [doors]="activeEditor().floorDoors()"
             [destinations]="activeEditor().graph().destinations" [plan]="activeEditor().plan()" [tool]="activeEditor().tool()"
             [selection]="activeEditor().selection()" [pendingFrom]="activeEditor().pendingFrom()" [backdrop]="backdrop()"
+            [showSourceGeometry]="false"
+            [highlightedPoint]="highlightedPoint()" [highlightedPlan]="highlightedPlan()"
+            [highlightedWallCandidate]="highlightedWallCandidate()" [highlightedDoorCandidate]="highlightedDoorCandidate()"
             (canvasPoint)="canvasPoint($event.x, $event.y)" (nodePicked)="nodePicked($event)"
             (connectionPicked)="connectionPicked($event)" (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)"
             (wallPicked)="wallPicked($event)" (doorPicked)="doorPicked($event)"
@@ -211,7 +215,7 @@
         @if (tab() === 'properties') {
           @if (selectedZone(); as zone) {
               <h2>Ambiente reconocido</h2>
-              <p class="mono id">ID: {{ zone.id }}</p>
+              <p class="id">{{ zone.name }}</p>
               <form [formGroup]="zoneForm" (ngSubmit)="applyZoneCorrection()">
                 <label>Nombre
                   <input formControlName="name" maxlength="150" />
@@ -234,7 +238,7 @@
               <p class="hint">Al aplicar la propuesta, los consultorios y servicios con nombre se crean como destinos, y los ascensores y escaleras como conexiones verticales.</p>
           } @else if (activeEditor().selectedWall(); as wall) {
             <h2>Propiedades del muro</h2>
-            <p class="mono id">ID: {{ wall.id }}</p>
+            <p class="id">Muro {{ elementNumber(activeEditor().graph().walls ?? [], wall.id) }}</p>
             <form [formGroup]="wallForm" (ngSubmit)="applyWall()">
               <div class="pair"><label>X inicial <input type="number" step="0.1" formControlName="x1" /></label>
                 <label>Y inicial <input type="number" step="0.1" formControlName="y1" /></label></div>
@@ -245,7 +249,7 @@
             </form>
           } @else if (activeEditor().selectedDoor(); as door) {
             <h2>Propiedades de la puerta</h2>
-            <p class="mono id">ID: {{ door.id }}</p>
+            <p class="id">Puerta {{ elementNumber(activeEditor().graph().doors ?? [], door.id) }}</p>
             <form [formGroup]="doorForm" (ngSubmit)="applyDoor()">
               <p class="hint">Posición sobre el muro, de 0 a 1.</p>
               <div class="pair"><label>Inicio <input type="number" min="0" max="1" step="0.01" formControlName="from" /></label>
@@ -255,7 +259,7 @@
             </form>
           } @else if (activeEditor().selectedNode(); as node) {
             <h2>Propiedades del nodo</h2>
-            <p class="mono id">ID: {{ node.id }}</p>
+            <p class="id">Nodo {{ elementNumber(activeEditor().graph().nodes, node.id) }}</p>
             <form [formGroup]="nodeForm" (ngSubmit)="applyNode()">
               <label>Tipo
                 <select formControlName="type">
@@ -287,7 +291,7 @@
             </form>
           } @else if (activeEditor().selectedConnection(); as link) {
             <h2>Propiedades de la arista</h2>
-            <p class="mono id">ID: {{ link.id }}</p>
+            <p class="id">Conexión {{ elementNumber(activeEditor().graph().connections, link.id) }}</p>
             <form [formGroup]="connectionForm" (ngSubmit)="applyConnection()">
               <label>Tipo
                 <select formControlName="type">
@@ -349,7 +353,10 @@
               <p class="hint">Sin alertas.</p>
             } @else {
               <ul class="alerts">
-                @for (message of alerts(); track $index) { <li>⚠ {{ message }}</li> }
+                @for (alert of proposalAlerts(); track $index) {
+                  <li><button type="button" class="alert-item" (click)="focusProposalAlert(alert)"
+                    [attr.aria-label]="'Ubicar en el plano: ' + alert.message">⚠ {{ alert.message }}</button></li>
+                }
               </ul>
             }
           } @else if (graphAlerts().length === 0) {
@@ -369,12 +376,15 @@
             <ul class="alerts">
               @for (alert of graphAlerts(); track $index) {
                 <li [class.error]="alert.severity === 'error'">
-                  <div class="alert-header"><span aria-hidden="true">{{ alert.severity === 'error' ? '⊗' : '⚠' }}</span>
-                    <strong>{{ alertHeading(alert) }}</strong><small>CÓDIGO: {{ alert.code }}</small></div>
-                  <p>{{ alert.message }}</p>
-                  @if (alert.elementId) { <span class="alert-location">{{ alert.elementType === 'NODE' ? 'Nodo' : 'Arista' }}: {{ alert.elementId }}</span> }
-                  @if (alert.elementId && (alert.elementType === 'NODE' || alert.elementType === 'CONNECTION')) {
-                    <button type="button" class="locate-button" (click)="focusAlert(alert)">⌗ Ubicar y corregir</button>
+                  <button type="button" class="alert-item" (click)="focusAlert(alert, false)"
+                    [attr.aria-label]="'Ubicar en el plano: ' + alert.message">
+                    <span class="alert-header"><span aria-hidden="true">{{ alert.severity === 'error' ? '⊗' : '⚠' }}</span>
+                      <strong>{{ alertHeading(alert) }}</strong></span>
+                    <span>{{ alert.message }}</span>
+                    @if (alertLocation(alert); as location) { <span class="alert-location">{{ location }}</span> }
+                  </button>
+                  @if (alert.elementId && (alert.elementType === 'NODE' || alert.elementType === 'CONNECTION' || alert.elementType === 'WALL' || alert.elementType === 'DOOR' || alert.elementType === 'DESTINATION')) {
+                    <button type="button" class="locate-button" (click)="focusAlert(alert)">⌗ Editar elemento</button>
                   }
                   @if (canExtendTo(alert)) {
                     <button type="button" class="repair-button" (click)="extendTo(alert)">⌁ Extender arista</button>

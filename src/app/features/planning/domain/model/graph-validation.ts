@@ -1,7 +1,7 @@
 import { EditorGraph, PlanBounds } from './map-graph.types';
 
 export type AlertSeverity = 'error' | 'warning';
-export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION';
+export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION' | 'WALL' | 'DOOR';
 
 export interface GraphAlert {
   code: string;
@@ -9,6 +9,8 @@ export interface GraphAlert {
   elementType: AlertElement;
   elementId: string | null;
   message: string;
+  candidateIndex?: number;
+  point?: { x: number; y: number };
 }
 
 export interface ServerIssue {
@@ -32,6 +34,10 @@ const MESSAGES: Record<string, string> = {
   INVALID_DESTINATION_NODE_TYPE: 'La entrada del directorio debe apuntar a un nodo de tipo destino.',
   INVALID_DESTINATION_DATA: 'Revisa el nombre y la especialidad del destino.',
   INVALID_NODE_DATA: 'Revisa la posición y el tipo del nodo.',
+  INVALID_WALL_DATA: 'El muro debe pertenecer al plano y tener un segmento válido.',
+  INVALID_DOOR_DATA: 'La puerta debe estar asociada a un muro y no superponerse con otra.',
+  CONNECTION_CROSSES_WALL: 'La conexión atraviesa un muro fuera de una puerta. Revisa el recorrido o agrega una puerta en el cruce.',
+  DOORWAY_WITHOUT_OPENING: 'La conexión está configurada como «Puerta», pero no coincide con una abertura de un muro.',
   MISSING_SOURCE_NODE: 'La conexión apunta a un nodo de origen que no existe.',
   MISSING_TARGET_NODE: 'La conexión apunta a un nodo de destino que no existe.'
 };

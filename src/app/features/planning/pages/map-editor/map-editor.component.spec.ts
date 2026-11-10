@@ -57,6 +57,8 @@ describe('MapEditorComponent', () => {
 
   it('selects the current plan and enables generation for any stored format', () => {
     create([svg, pdf]);
+    expect(component.tools.map(tool => tool.label)).not.toContain('Mover');
+    expect(component.tools.find(tool => tool.id === 'select')?.hint).toContain('arrastra');
     expect(component.versionId()).toBe('v2');
     expect(component.canGenerate()).toBe(true);
     component.selectVersion('v1');
@@ -108,6 +110,123 @@ describe('MapEditorComponent', () => {
     expect(component.connectionLine(proposal.connections[0])).toEqual({ x1: 50, y1: 60, x2: 50, y2: 90 });
   });
 
+  it('shows every recognized layer and retains a conflicting wall for correction after applying', () => {
+    const fixture = create([svg]);
+    const detected = { zones: [{ id: 'room', name: 'Sala', category: 'ROOM', x: 0, y: 0, width: 20, height: 20 }],
+      nodes: [{ id: 'a', label: 'A', x: 20, y: 30 }, { id: 'b', label: 'B', x: 80, y: 30 }],
+      connections: [{ id: 'link', fromNodeId: 'a', toNodeId: 'b', distanceUnits: 60 }],
+      wallCandidates: [{ x1: 50, y1: 0, x2: 50, y2: 60 }],
+      doors: [{ id: 'unmatched', x1: 10, y1: 5, x2: 10, y2: 15 }], warnings: [] };
+    plans.interpret.mockReturnValue(of(result({ proposal: detected, scaleStatus: 'CONFIRMED' })));
+    component.generate(); fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('.backdrop .zone')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('.backdrop line')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('.editable-wall')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('g.node')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelectorAll('line.edge')).toHaveLength(1);
+    expect(component.alerts().some(message => message.includes('Puerta candidata 1'))).toBe(true);
+    const candidateWarning = [...fixture.nativeElement.querySelectorAll('.alerts .alert-item')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('Puerta candidata 1')) as HTMLButtonElement;
+    candidateWarning.click(); fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.backdrop .door.selected')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('circle.alert-target')).not.toBeNull();
+    component.applyProposal();
+    expect(component.editor.floorWalls()).toHaveLength(1);
+    expect(component.editor.geometryError()).toContain('cruza el muro');
+    expect(component.editor.geometryError()).toContain('La conexión 1');
+    expect(component.editor.geometryError()).not.toContain(component.editor.graph().connections[0].id);
+    expect(component.canSave()).toBe(false);
+    const conflict = component.graphAlerts().find(alert => alert.message.includes('La conexión 1 cruza'));
+    expect(conflict?.elementId).toBe(component.editor.graph().connections[0].id);
+    component.tab.set('alerts'); fixture.detectChanges();
+    const conflictButton = [...fixture.nativeElement.querySelectorAll('.alerts .alert-item')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('La conexión 1 cruza')) as HTMLButtonElement;
+    conflictButton.click(); fixture.detectChanges();
+    expect(component.tab()).toBe('alerts');
+    expect(fixture.nativeElement.querySelector('line.edge.selected')).not.toBeNull();
+    component.focusAlert(conflict!);
+    fixture.detectChanges();
+    expect(component.editor.selectedConnection()?.id).toBe(component.editor.graph().connections[0].id);
+    expect(fixture.nativeElement.querySelector('.id')?.textContent).toContain('Conexión 1');
+    expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).not.toContain(component.editor.graph().connections[0].id);
+    component.chooseTool('door');
+    component.wallPicked({ id: component.editor.floorWalls()[0].id, fraction: .5 });
+    expect(component.editor.geometryError()).toBeNull();
+    expect(component.canSave()).toBe(true);
+  });
+
+  it('edits recognized walls and doors in the proposal and applies the corrected geometry', () => {
+    const fixture = create([svg]);
+    plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED', proposal: {
+      zones: [], warnings: [],
+      nodes: [{ id: 'a', label: 'A', x: 20, y: 30 }, { id: 'b', label: 'B', x: 80, y: 30 }],
+      connections: [{ id: 'link', fromNodeId: 'a', toNodeId: 'b', distanceUnits: 60, graphType: 'DOORWAY' }],
+      wallCandidates: [{ x1: 50, y1: 0, x2: 50, y2: 60 }],
+      doors: [{ id: 'opening', x1: 50, y1: 25, x2: 50, y2: 35 }]
+    } })));
+    component.generate(); fixture.detectChanges();
+    const buttons = [...fixture.nativeElement.querySelectorAll('.tools button')] as HTMLButtonElement[];
+    expect(buttons.find(button => button.textContent?.includes('Muro'))?.disabled).toBe(false);
+    expect(buttons.find(button => button.textContent?.includes('Puerta'))?.disabled).toBe(false);
+    expect(component.previewEditor.floorWalls()).toHaveLength(1);
+    expect(component.previewEditor.floorDoors()).toHaveLength(1);
+    const originalWall = component.previewEditor.floorWalls()[0];
+    component.previewEditor.updateWall(originalWall.id, { x1: 50, y1: 5, x2: 50, y2: 55 });
+    component.chooseTool('wall');
+    component.canvasPoint(10, 5); component.canvasPoint(10, 55);
+    expect(component.previewEditor.floorWalls()).toHaveLength(2);
+    component.chooseTool('door');
+    component.wallPicked({ id: component.previewEditor.floorWalls()[1].id, fraction: .5 });
+    expect(component.previewEditor.floorDoors()).toHaveLength(2);
+    component.undo(); expect(component.previewEditor.floorDoors()).toHaveLength(1);
+    component.redo(); expect(component.previewEditor.floorDoors()).toHaveLength(2);
+    component.applyProposal();
+    expect(component.editor.floorWalls()).toHaveLength(2);
+    expect(component.editor.floorWalls()[0]).toMatchObject({ x1: 50, y1: 5, x2: 50, y2: 55 });
+    expect(component.editor.floorDoors()).toHaveLength(2);
+    expect(component.editor.geometryError()).toBeNull();
+  });
+
+  it('locates a clicked proposal warning and a clicked connection conflict on the canvas', () => {
+    const fixture = create([svg]);
+    plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, warnings: [],
+      zones: [{ ...proposal.zones[0], name: 'ROOM 1' }],
+      wallCandidates: [{ x1: 0, y1: 75, x2: 100, y2: 75 }]
+    } })));
+    component.generate(); fixture.detectChanges();
+    const warning = [...fixture.nativeElement.querySelectorAll('.alerts .alert-item')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('no tiene una etiqueta confiable')) as HTMLButtonElement;
+    expect(warning).toBeDefined();
+    warning.click(); fixture.detectChanges();
+    expect(component.selectedZoneId()).toBe('z1');
+    expect(fixture.nativeElement.querySelector('.backdrop .zone.selected')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('circle.alert-target')).not.toBeNull();
+
+    const conflict = [...fixture.nativeElement.querySelectorAll('.alerts .alert-item')]
+      .find((button: HTMLButtonElement) => button.textContent?.includes('La conexión 1')) as HTMLButtonElement;
+    expect(conflict).toBeDefined();
+    conflict.click(); fixture.detectChanges();
+    expect(component.previewEditor.selectedConnection()?.id).toBe('c1');
+    expect(fixture.nativeElement.querySelector('line.edge.selected')).not.toBeNull();
+    expect(component.tab()).toBe('alerts');
+  });
+
+  it('keeps an unresolved candidate connection visible in alerts and prevents silent loss on apply', () => {
+    const fixture = create([svg]);
+    plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, warnings: [],
+      connections: [{ id: 'orphan', fromNodeId: 'n1', toNodeId: 'missing', distanceUnits: 10 }] } })));
+    component.generate();
+    fixture.detectChanges();
+    expect(component.proposal()?.connections.map(link => link.id)).toContain('orphan');
+    expect(component.alerts().some(message => message.includes('Conexión candidata 1'))).toBe(true);
+    expect(component.alerts().some(message => message.includes('orphan'))).toBe(false);
+    expect(component.tab()).toBe('alerts');
+    expect(component.canApply()).toBe(false);
+    component.applyProposal();
+    expect(component.notice()).toContain('conexiones sin nodos');
+    expect(component.editor.graph().connections).toHaveLength(0);
+  });
+
   it('warns when too few connections were detected for the rooms found', () => {
     create([svg]);
     const rooms = ['a', 'b', 'c'].map((id, index) => ({ id, name: id, category: 'ROOM', x: index * 10, y: 0, width: 10, height: 10 }));
@@ -153,7 +272,7 @@ describe('MapEditorComponent', () => {
     create([svg]);
     plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, warnings: [] } })));
     component.generate();
-    expect(component.tab()).toBe('properties');
+    expect(component.tab()).toBe('alerts');
     component.selectZone('z1');
     expect(component.selectedZone()?.name).toBe('Consultorio 101');
     component.selectZone('z1');
@@ -200,9 +319,11 @@ describe('MapEditorComponent', () => {
       expect(drafts.save.mock.calls[0][1].doors).toHaveLength(1);
     });
 
-    it('restores rooms and walls from the draft plan while keeping the saved graph', () => {
+    it('shows recognized rooms and saved geometry without source-plan traces after reloading', () => {
       const graph = { nodes: [{ id: 'saved', floorId: 'floor', planVersionId: 'pv', x: 25, y: 30, type: 'INTERSECTION' }],
-        connections: [], destinations: [] };
+        connections: [], destinations: [],
+        walls: [{ id: 'saved-wall', floorId: 'floor', planVersionId: 'pv', x1: 10, y1: 0, x2: 10, y2: 60 }],
+        doors: [{ id: 'saved-door', wallId: 'saved-wall', from: .4, to: .6 }] };
       drafts.load.mockReturnValue(of(draft(0.5, graph)));
       const fixture = create([svg]);
       fixture.detectChanges();
@@ -211,7 +332,9 @@ describe('MapEditorComponent', () => {
       expect(component.editor.graph().nodes).toEqual(graph.nodes);
       expect(component.backdrop()?.zones).toEqual(proposal.zones);
       expect(fixture.nativeElement.querySelector('.backdrop .zone')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('.backdrop line')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.backdrop line')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.editable-wall')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.editable-door')).not.toBeNull();
     });
 
     it('loads the site draft into the editor on the selected floor', () => {
@@ -446,7 +569,7 @@ describe('MapEditorComponent', () => {
       expect(component.unlabeled().map(zone => zone.id)).toEqual(['b']);
       expect(component.unlabeledZone(zones[0])).toBe(false);
       expect(component.unlabeledZone(zones[1])).toBe(true);
-      expect(component.alerts().some(message => message.includes('1 ambiente no tiene una etiqueta confiable'))).toBe(true);
+      expect(component.alerts().some(message => message.includes('«ROOM 2» no tiene una etiqueta confiable'))).toBe(true);
       expect(component.tab()).toBe('alerts');
     });
 
@@ -456,7 +579,7 @@ describe('MapEditorComponent', () => {
       plans.interpret.mockReturnValue(of(result({ proposal: { ...proposal, zones, warnings: [] } })));
       component.generate();
       expect(component.unlabeled()).toHaveLength(3);
-      expect(component.alerts().some(message => message.includes('3 ambientes no tienen una etiqueta confiable'))).toBe(true);
+      expect(component.alerts().filter(message => message.includes('no tiene una etiqueta confiable'))).toHaveLength(3);
     });
   });
 
@@ -487,7 +610,7 @@ describe('MapEditorComponent', () => {
       component.generate();
       expect(component.isolated().map(zone => zone.id)).toEqual(['zone-1']);
       expect(component.isIsolated('zone-1')).toBe(true);
-      expect(component.alerts().some(message => message.includes('fuera de la red de recorridos: ROOM 2'))).toBe(true);
+      expect(component.alerts().some(message => message.includes('«ROOM 2» queda fuera de la red de recorridos'))).toBe(true);
     });
 
     it('lets the author name an unlabeled room and change its type, then revert it', () => {

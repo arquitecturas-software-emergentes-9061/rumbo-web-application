@@ -5,7 +5,7 @@
     aria-label="Lienzo del mapa. Usa las flechas sobre un nodo enfocado para moverlo."
     [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge' || tool() === 'reconnect'"
     (click)="canvasClicked($event)" (pointermove)="pointerMoved($event)">
-    <rect class="plan-area" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
+    <rect class="plan-area" [class.highlighted]="highlightedPlan()" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
     @if (backdrop(); as context) {
       <g class="backdrop" [class.interactive]="interactiveZones()" [attr.aria-hidden]="interactiveZones() ? null : 'true'">
         @for (zone of context.zones; track zone.id) {
@@ -17,18 +17,24 @@
           <text [attr.x]="zone.labelPosition?.x ?? zone.x + zone.width / 2" [attr.y]="zone.labelPosition?.y ?? zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
             text-anchor="middle">{{ zone.name }}</text>
         }
-        @if (context.barriers?.length) {
+        @if (showSourceGeometry() && context.barriers?.length) {
           @for (barrier of context.barriers; track $index) {
             <path class="barrier" [class.window]="barrier.kind === 'WINDOW'" [class.obstacle]="barrier.kind === 'OBSTACLE'"
               [attr.d]="polygonPath(barrier.polygon)" fill-rule="evenodd" />
           }
-        } @else {
+        }
+        @if ((showSourceGeometry() && (interactiveZones() || !context.barriers?.length)) || highlightedWallCandidate() !== null) {
           @for (wall of context.wallCandidates; track $index) {
-            <line [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+            @if (showSourceGeometry() || $index === highlightedWallCandidate()) {
+              <line [class.selected]="$index === highlightedWallCandidate()" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+            }
           }
         }
         @for (door of context.doors ?? []; track door.id) {
-          <line class="door" [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2" [attr.stroke-width]="unit() * 3" />
+          @if (showSourceGeometry() || $index === highlightedDoorCandidate()) {
+            <line class="door" [class.selected]="$index === highlightedDoorCandidate()"
+              [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2" [attr.stroke-width]="unit() * 3" />
+          }
         }
       </g>
     }
@@ -79,6 +85,10 @@
           <text [attr.x]="node.x" [attr.y]="node.y - unit() * 10" [attr.font-size]="unit() * 8" text-anchor="middle">{{ text }}</text>
         }
       </g>
+    }
+    @if (highlightedPoint(); as point) {
+      <circle class="alert-target" [attr.cx]="point.x" [attr.cy]="point.y"
+        [attr.r]="unit() * 13" [attr.stroke-width]="unit() * 2" />
     }
   </svg>
   <div class="zoom-controls" role="toolbar" aria-label="Zoom del mapa">

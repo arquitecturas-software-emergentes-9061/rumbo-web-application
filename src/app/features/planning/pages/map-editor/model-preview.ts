@@ -28,8 +28,8 @@ export function summarize(proposal: ModelProposal): ProposalSummary {
 }
 
 export function isEmptyProposal(proposal: ModelProposal): boolean {
-  const { zones, nodes, walls } = summarize(proposal);
-  return zones + nodes + walls === 0;
+  const { zones, nodes, connections, walls, doors } = summarize(proposal);
+  return zones + nodes + connections + walls + doors === 0;
 }
 
 /** Fits every proposed element plus a margin so the preview never clips geometry. */

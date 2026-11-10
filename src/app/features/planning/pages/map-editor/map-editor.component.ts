@@ -11,11 +11,13 @@ import { FloorPlansService, PlanVersion } from '../floor-plan-calibration/floor-
 import { GraphCanvasComponent } from './graph-canvas.component';
 import { destinationReachability, repairOrigin } from '../../domain/model/graph-reachability';
 import { GraphEditorState, Tool } from '../../application/graph-editor-state';
-import { previewPlan, proposalGraph, proposalWithGraph } from '../../application/proposal-graph';
+import { previewPlan, proposalGraph, proposalWithGraph, unresolvedProposalConnections,
+  unadoptedProposalGeometry } from '../../application/proposal-graph';
 import {
   CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor
 } from '../../domain/model/graph-model';
 import { GraphAlert, countErrors } from '../../domain/model/graph-validation';
+import { crossingConflictDetails, crossingConflicts, doorSegment, proposalGeometry } from '../../domain/model/map-geometry';
 import { DraftSnapshot, MapEditorApiService, SaveFailure, classifySaveError } from '../../infrastructure/map-editor-api.service';
 import {
   ModelProposal, ZONE_CATEGORIES, categoryLabel, correctZone, describeCreateDraftError, describeDraftLoadError, describeGenerationError, isEmptyProposal,
@@ -23,6 +25,10 @@ import {
 } from './model-preview';
 
 type PanelTab = 'properties' | 'alerts';
+type AlertTarget = { kind: 'zone' | 'node' | 'connection' | 'wall' | 'door'; id: string; point?: { x: number; y: number } }
+  | { kind: 'wallCandidate' | 'doorCandidate'; index: number }
+  | { kind: 'point'; x: number; y: number } | { kind: 'plan' };
+interface ProposalAlert { message: string; target: AlertTarget }
 
 const EMPTY_PROPOSAL: ModelProposal = { zones: [], nodes: [], connections: [], wallCandidates: [], warnings: [] };
 
@@ -54,13 +60,12 @@ export class MapEditorComponent implements OnInit {
   readonly destinationTypes = DESTINATION_TYPES;
   readonly zoneCategories = ZONE_CATEGORIES;
   readonly tools: { id: Tool; label: string; hint: string; disabled?: boolean }[] = [
-    { id: 'select', label: 'Seleccionar', hint: 'Elige un nodo o una arista' },
+    { id: 'select', label: 'Seleccionar', hint: 'Selecciona o arrastra nodos, muros y puertas' },
     { id: 'node', label: 'Nodo', hint: 'Haz clic en el plano para agregar un nodo' },
     { id: 'edge', label: 'Arista', hint: 'Elige dos nodos para conectarlos' },
     { id: 'wall', label: 'Muro', hint: 'Marca dos extremos para crear un muro; selecciona uno para editarlo' },
     { id: 'door', label: 'Puerta', hint: 'Haz clic sobre un muro para abrir una puerta' },
-    { id: 'destination', label: 'Destino', hint: 'Elige un nodo para marcarlo como destino' },
-    { id: 'move', label: 'Mover', hint: 'Arrastra un nodo; también puedes usar las flechas' }
+    { id: 'destination', label: 'Destino', hint: 'Elige un nodo para marcarlo como destino' }
   ];
 
   readonly sites = signal<Site[]>([]);
@@ -76,10 +81,15 @@ export class MapEditorComponent implements OnInit {
   readonly notice = signal<string | null>(null);
   readonly success = signal<string | null>(null);
   readonly proposal = signal<ModelProposal | null>(null);
+  readonly unadoptedGeometry = signal<Pick<ModelProposal, 'wallCandidates' | 'doors'>>({ wallCandidates: [], doors: [] });
   readonly scaleProvisional = signal(true);
   readonly tab = signal<PanelTab>('properties');
   readonly selectedZoneId = signal<string | null>(null);
   readonly selectedLinkId = signal<string | null>(null);
+  readonly highlightedPoint = signal<{ x: number; y: number } | null>(null);
+  readonly highlightedPlan = signal(false);
+  readonly highlightedWallCandidate = signal<number | null>(null);
+  readonly highlightedDoorCandidate = signal<number | null>(null);
   /** The proposal exactly as the API returned it, so manual corrections can be reverted. */
   private readonly generated = signal<ModelProposal | null>(null);
 
@@ -134,37 +144,94 @@ export class MapEditorComponent implements OnInit {
     return null;
   });
   readonly summary = computed(() => (this.proposal() ? summarize(this.proposal() as ModelProposal) : null));
+  readonly unresolvedConnections = computed(() => this.proposal() ? unresolvedProposalConnections(this.proposal() as ModelProposal) : []);
   readonly isolated = computed(() => (this.proposal() ? isolatedZones(this.proposal() as ModelProposal) : []));
   readonly unlabeled = computed(() => (this.proposal() ? unlabeledZones(this.proposal() as ModelProposal) : []));
   private readonly box = computed(() => viewBoxFor(this.proposal() ?? EMPTY_PROPOSAL));
   readonly viewBox = computed(() => `${this.box().x} ${this.box().y} ${this.box().width} ${this.box().height}`);
   readonly strokeUnit = computed(() => Math.max(this.box().width, this.box().height) / 400);
-  readonly alerts = computed(() => {
+  readonly proposalAlerts = computed<ProposalAlert[]>(() => {
     const current = this.proposal();
     if (!current) return [];
-    const list = [...current.warnings];
+    const list: ProposalAlert[] = current.warnings.map(message => ({ message, target: this.warningTarget(current, message) }));
+    for (const id of this.unresolvedConnections()) {
+      const number = current.connections.findIndex(connection => connection.id === id) + 1;
+      const connection = current.connections.find(item => item.id === id);
+      const endpoint = connection && current.nodes.find(node => node.id === connection.fromNodeId || node.id === connection.toNodeId);
+      list.push({ message: `Conexión candidata ${number}: falta un nodo de origen o destino. Corrige el plano y vuelve a generar el modelo antes de aplicar.`,
+        target: endpoint ? { kind: 'node', id: endpoint.id } : { kind: 'plan' } });
+    }
     const expected = Math.max(current.zones.length - 1, 0);
     if (current.connections.length < expected) {
-      list.push(`Se detectaron pocas conexiones (${current.connections.length}) para ${current.zones.length} ambientes. Revisa los recorridos antes de guardar el borrador.`);
+      list.push({ message: `Se detectaron pocas conexiones (${current.connections.length}) para ${current.zones.length} ambientes. Revisa los recorridos antes de guardar el borrador.`,
+        target: { kind: 'plan' } });
     }
-    const cut = this.isolated();
-    if (cut.length > 0) {
-      list.push(`${cut.length === 1 ? 'Un ambiente queda' : cut.length + ' ambientes quedan'} fuera de la red de recorridos: ${cut.map(zone => zone.name).join(', ')}. Ningún paciente podría llegar a ${cut.length === 1 ? 'él' : 'ellos'}.`);
+    for (const zone of this.isolated()) {
+      list.push({ message: `El ambiente «${zone.name}» queda fuera de la red de recorridos. Ningún paciente podría llegar a él.`,
+        target: { kind: 'zone', id: zone.id } });
     }
-    const missing = this.unlabeled().length;
-    if (missing > 0) {
-      list.push(`${missing} ${missing === 1 ? 'ambiente no tiene' : 'ambientes no tienen'} una etiqueta confiable: confirma su tipo y nombre antes de publicar.`);
+    for (const zone of this.unlabeled()) {
+      list.push({ message: `El ambiente «${zone.name}» no tiene una etiqueta confiable: confirma su tipo y nombre antes de publicar.`,
+        target: { kind: 'zone', id: zone.id } });
     }
-    if (this.scaleProvisional()) list.push('La escala es provisional: calibra el plano antes de publicar el mapa.');
-    list.push('Las conexiones propuestas son candidatas. Revísalas antes de guardarlas como borrador.');
+    if (this.scaleProvisional()) list.push({ message: 'La escala es provisional: calibra el plano antes de publicar el mapa.', target: { kind: 'plan' } });
+    for (const issue of this.previewGeometry()?.issues ?? []) list.push({ message: issue.message,
+      target: issue.candidateKind === 'wall' ? { kind: 'wallCandidate', index: issue.candidateIndex }
+        : { kind: 'doorCandidate', index: issue.candidateIndex } });
+    for (const conflict of this.previewGeometry()?.conflicts ?? []) list.push({ message: conflict.message,
+      target: { kind: 'connection', id: conflict.connectionId, point: conflict.point } });
     return list;
   });
+  readonly alerts = computed(() => this.proposalAlerts().map(alert => alert.message));
+  private warningTarget(proposal: ModelProposal, warning: string): AlertTarget {
+    const zone = proposal.zones.find(item => warning.includes(item.id) || warning.includes(item.name));
+    if (zone) return { kind: 'zone', id: zone.id };
+    const door = proposal.doors?.find(item => warning.includes(item.id));
+    if (door) return { kind: 'point', x: (door.x1 + door.x2) / 2, y: (door.y1 + door.y2) / 2 };
+    return { kind: 'plan' };
+  }
   readonly selectedZone = computed(() => this.proposal()?.zones.find(zone => zone.id === this.selectedZoneId()) ?? null);
+  readonly previewBackdrop = computed(() => {
+    const current = this.proposal();
+    return current ? { ...current, ...this.unadoptedGeometry() } : null;
+  });
+  private readonly previewGeometry = computed(() => {
+    const proposal = this.previewBackdrop(), plan = this.previewEditor.plan();
+    if (!proposal || !plan) return null;
+    let sequence = 0;
+    const geometry = proposalGeometry(proposal, plan, this.previewEditor.graph(), () => `preview-geometry-${++sequence}`);
+    const unresolved = unadoptedProposalGeometry(proposal, this.previewEditor.graph());
+    const unresolvedDoorIds = new Set(unresolved.doors.map(door => door.id));
+    const issues = geometry.issues.filter(issue => issue.candidateKind === 'wall'
+      || unresolvedDoorIds.has(proposal.doors?.[issue.candidateIndex]?.id ?? ''));
+    for (const [index, door] of (proposal.doors ?? []).entries()) {
+      if (unresolvedDoorIds.has(door.id) && !issues.some(issue => issue.candidateKind === 'door' && issue.candidateIndex === index)) {
+        issues.push({ code: 'UNMATCHED_DOOR', candidateKind: 'door', candidateIndex: index,
+          message: `Puerta candidata ${index + 1}: todavía no forma parte del modelo editable. Coloca una abertura sobre el muro para incorporarla.` });
+      }
+    }
+    return { issues, conflicts: crossingConflictDetails(this.previewEditor.graph()) };
+  });
+  readonly draftGeometryIssues = computed(() => {
+    const proposal = this.backdrop(), plan = this.editor.plan();
+    if (!proposal || !plan) return [];
+    let sequence = 0;
+    return proposalGeometry(proposal, plan, this.editor.graph(), () => `review-geometry-${++sequence}`).issues;
+  });
 
   readonly graphAlerts = computed<GraphAlert[]>(() => {
     const local = this.editor.alerts();
     const seen = new Set(local.map(alert => `${alert.code}|${alert.elementId}`));
-    return [...local, ...this.serverAlerts().filter(alert => !seen.has(`${alert.code}|${alert.elementId}`))];
+    const geometry: GraphAlert[] = crossingConflictDetails(this.editor.graph()).map(conflict => ({
+      code: 'CONNECTION_CROSSES_WALL', severity: 'error', elementType: 'CONNECTION',
+      elementId: conflict.connectionId, message: conflict.message, point: conflict.point
+    }));
+    const review: GraphAlert[] = this.draftGeometryIssues().map(issue => ({
+      code: issue.code, severity: 'warning', elementType: issue.candidateKind === 'wall' ? 'WALL' : 'DOOR',
+      elementId: null, candidateIndex: issue.candidateIndex, message: issue.message
+    }));
+    return [...local, ...geometry, ...review,
+      ...this.serverAlerts().filter(alert => !seen.has(`${alert.code}|${alert.elementId}`))];
   });
   readonly graphErrorCount = computed(() => countErrors(this.graphAlerts()));
   readonly reachability = computed(() => destinationReachability(this.editor.graph()));
@@ -173,7 +240,8 @@ export class MapEditorComponent implements OnInit {
   /** A site without any map can start its first draft from the plan selected for the current floor. */
   readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
     && !!this.siteId() && !!this.floorId() && !!this.versionId());
-  readonly canApply = computed(() => !!this.proposal() && (this.draft() ? !!this.editor.plan() : this.canCreateDraft()));
+  readonly canApply = computed(() => !!this.proposal() && this.unresolvedConnections().length === 0
+    && (this.draft() ? !!this.editor.plan() : this.canCreateDraft()));
   readonly proposalScaleBlocks = computed(() => this.editor.plan() !== null && this.editor.plan()?.metersPerUnit === null);
   readonly toolHint = computed(() => this.tools.find(item => item.id === this.activeEditor().tool())?.hint ?? '');
   readonly selectedKindLabel = computed(() => this.editor.selectedNode() ? 'nodo' : this.editor.selectedConnection() ? 'arista' : null);
@@ -254,6 +322,7 @@ export class MapEditorComponent implements OnInit {
 
   selectSite(id: string | null, force = false): void {
     if (!force && id !== this.siteId() && !this.confirmDiscard()) return;
+    this.clearAlertHighlight();
     this.siteId.set(id);
     this.floors.set([]);
     this.floorId.set(null);
@@ -282,6 +351,7 @@ export class MapEditorComponent implements OnInit {
   }
 
   selectFloor(id: string | null): void {
+    this.clearAlertHighlight();
     this.floorId.set(id);
     this.editor.floorId.set(id);
     this.editor.select(null);
@@ -372,14 +442,20 @@ export class MapEditorComponent implements OnInit {
           return;
         }
         const plan = previewPlan(result.proposal, floorId, versionId, this.editor.plan());
-        this.previewEditor.load(proposalGraph(result.proposal, plan), [plan]);
+        const preview = proposalGraph(result.proposal, plan);
+        this.clearAlertHighlight();
+        this.unadoptedGeometry.set(unadoptedProposalGeometry(result.proposal, preview));
+        this.previewEditor.load(preview, [plan]);
         this.previewEditor.floorId.set(floorId);
         this.proposal.set(result.proposal);
         this.generated.set(result.proposal);
         this.selectedLinkId.set(null);
         this.scaleProvisional.set(result.scaleStatus !== 'CONFIRMED');
         this.selectedZoneId.set(null);
-        this.tab.set(result.proposal.warnings.length > 0 || unlabeledZones(result.proposal).length > 0 ? 'alerts' : 'properties');
+        this.tab.set(result.proposal.warnings.length > 0 || unlabeledZones(result.proposal).length > 0
+          || this.unresolvedConnections().length > 0
+          || (this.previewGeometry()?.issues.length ?? 0) > 0 || (this.previewGeometry()?.conflicts.length ?? 0) > 0
+          ? 'alerts' : 'properties');
       },
       error: (error: HttpErrorResponse) => {
         this.resetPreview();
@@ -391,8 +467,13 @@ export class MapEditorComponent implements OnInit {
   applyProposal(): void {
     const current = this.proposal();
     if (!current) return;
+    if (this.unresolvedConnections().length) {
+      this.notice.set('La propuesta contiene conexiones sin nodos. Corrige el plano y vuelve a generar el modelo.');
+      this.tab.set('alerts');
+      return;
+    }
     if (!this.draft()) { this.createDraft(() => this.applyProposal()); return; }
-    if (!this.editor.applyGenerated(current)) {
+    if (!this.editor.applyGenerated(current, this.previewEditor.graph())) {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;
     }
@@ -468,6 +549,7 @@ export class MapEditorComponent implements OnInit {
   isIsolated(zoneId: string): boolean { return this.isolated().some(zone => zone.id === zoneId); }
 
   selectZone(id: string): void {
+    this.clearAlertHighlight();
     this.selectedZoneId.set(id === this.selectedZoneId() ? null : id);
     this.previewEditor.select(null);
     this.tab.set('properties');
@@ -486,26 +568,31 @@ export class MapEditorComponent implements OnInit {
   }
 
   chooseTool(tool: Tool): void {
+    this.clearAlertHighlight();
     this.activeEditor().setTool(tool);
   }
 
-  canvasPoint(x: number, y: number): void { this.activeEditor().canvasClick(x, y); this.syncPreviewGraph(); }
+  canvasPoint(x: number, y: number): void { this.clearAlertHighlight(); this.activeEditor().canvasClick(x, y); this.syncPreviewGraph(); }
   nodePicked(id: string): void {
+    this.clearAlertHighlight();
     this.selectedZoneId.set(null);
     this.activeEditor().nodeClick(id);
     this.syncPreviewGraph();
     if (this.activeEditor().selection()) this.tab.set('properties');
   }
   connectionPicked(id: string): void {
+    this.clearAlertHighlight();
     this.selectedZoneId.set(null);
     this.activeEditor().connectionClick(id);
     if (this.activeEditor().selection()) this.tab.set('properties');
   }
   nodeMoved(id: string, x: number, y: number): void { this.activeEditor().moveTo(id, x, y); this.syncPreviewGraph(); }
   wallPicked(event: { id: string; fraction: number }): void {
+    this.clearAlertHighlight();
     this.selectedZoneId.set(null); this.activeEditor().wallClick(event.id, event.fraction); this.tab.set('properties');
   }
   doorPicked(id: string): void {
+    this.clearAlertHighlight();
     this.selectedZoneId.set(null); this.activeEditor().doorClick(id); this.tab.set('properties');
   }
   wallMoved(event: { id: string; x1: number; y1: number; x2: number; y2: number }): void {
@@ -554,6 +641,31 @@ export class MapEditorComponent implements OnInit {
     return headings[alert.code] ?? (alert.severity === 'error' ? 'Error del modelo' : 'Advertencia del modelo');
   }
 
+  elementNumber(elements: { id: string }[], id: string): number {
+    return elements.findIndex(element => element.id === id) + 1;
+  }
+
+  alertLocation(alert: GraphAlert): string | null {
+    if (alert.candidateIndex !== undefined && (alert.elementType === 'WALL' || alert.elementType === 'DOOR'))
+      return `${alert.elementType === 'WALL' ? 'Muro' : 'Puerta'} candidata ${alert.candidateIndex + 1}`;
+    if (!alert.elementId) return null;
+    const graph = this.editor.graph();
+    if (alert.elementType === 'DESTINATION') {
+      const destination = graph.destinations.find(item => item.id === alert.elementId);
+      return destination ? `Destino: ${destination.name}` : null;
+    }
+    const entries = alert.elementType === 'NODE' ? graph.nodes
+      : alert.elementType === 'CONNECTION' ? graph.connections
+      : alert.elementType === 'WALL' ? graph.walls ?? []
+      : alert.elementType === 'DOOR' ? graph.doors ?? [] : [];
+    const number = this.elementNumber(entries, alert.elementId);
+    if (!number) return null;
+    const label = alert.elementType === 'CONNECTION' ? 'Conexión'
+      : alert.elementType === 'WALL' ? 'Muro'
+      : alert.elementType === 'DOOR' ? 'Puerta' : 'Nodo';
+    return `${label} ${number}`;
+  }
+
   beginReconnect(end: 'source' | 'target'): void { this.activeEditor().beginReconnect(end); }
   canExtendTo(alert: GraphAlert): boolean {
     return !!alert.elementId && (alert.code === 'DISCONNECTED_NODE' || alert.code === 'UNREACHABLE_DESTINATION') &&
@@ -595,14 +707,89 @@ export class MapEditorComponent implements OnInit {
     this.syncPreviewGraph();
   }
 
-  focusAlert(alert: GraphAlert): void {
+  private clearAlertHighlight(): void {
+    this.highlightedPoint.set(null);
+    this.highlightedPlan.set(false);
+    this.highlightedWallCandidate.set(null);
+    this.highlightedDoorCandidate.set(null);
+  }
+
+  private highlightPoint(x: number, y: number): void {
+    this.highlightedPoint.set({ x, y });
+    this.graphCanvas()?.focusPoint(x, y);
+  }
+
+  focusProposalAlert(alert: ProposalAlert): void {
+    this.clearAlertHighlight();
+    this.previewEditor.select(null);
+    this.selectedZoneId.set(null);
+    const graph = this.previewEditor.graph(), context = this.previewBackdrop();
+    const target = alert.target;
+    if (target.kind === 'zone') {
+      const zone = context?.zones.find(item => item.id === target.id);
+      if (zone) {
+        this.previewEditor.select(null);
+        this.selectedZoneId.set(zone.id);
+        this.highlightPoint(zone.x + zone.width / 2, zone.y + zone.height / 2);
+        return;
+      }
+    } else if (target.kind === 'node') {
+      const node = graph.nodes.find(item => item.id === target.id);
+      if (node) {
+        this.selectedZoneId.set(null);
+        this.previewEditor.select({ kind: 'node', id: node.id });
+        this.highlightPoint(node.x, node.y);
+        return;
+      }
+    } else if (target.kind === 'connection') {
+      const link = graph.connections.find(item => item.id === target.id);
+      const from = link && graph.nodes.find(node => node.id === link.sourceNodeId);
+      const to = link && graph.nodes.find(node => node.id === link.targetNodeId);
+      if (link && from && to) {
+        this.selectedZoneId.set(null);
+        this.previewEditor.select({ kind: 'connection', id: link.id });
+        this.highlightPoint(target.point?.x ?? (from.x + to.x) / 2, target.point?.y ?? (from.y + to.y) / 2);
+        return;
+      }
+    } else if (target.kind === 'wallCandidate' || target.kind === 'doorCandidate') {
+      const line = target.kind === 'wallCandidate' ? context?.wallCandidates[target.index] : context?.doors?.[target.index];
+      if (line) {
+        this.selectedZoneId.set(null);
+        this.previewEditor.select(null);
+        if (target.kind === 'wallCandidate') this.highlightedWallCandidate.set(target.index);
+        else this.highlightedDoorCandidate.set(target.index);
+        this.highlightPoint((line.x1 + line.x2) / 2, (line.y1 + line.y2) / 2);
+        return;
+      }
+    } else if (target.kind === 'point') {
+      this.highlightPoint(target.x, target.y);
+      return;
+    }
+    this.highlightedPlan.set(true);
+    this.graphCanvas()?.fit();
+  }
+
+  focusAlert(alert: GraphAlert, openProperties = true): void {
+    this.clearAlertHighlight();
+    this.editor.select(null);
+    if (alert.elementType === 'DESTINATION' && alert.elementId) {
+      const destination = this.editor.graph().destinations.find(item => item.id === alert.elementId);
+      const node = destination && this.editor.graph().nodes.find(item => item.id === destination.nodeId);
+      if (node) {
+        this.editor.select({ kind: 'node', id: node.id });
+        this.highlightPoint(node.x, node.y);
+        if (openProperties) this.tab.set('properties');
+        return;
+      }
+    }
     if (alert.elementType === 'NODE' && alert.elementId) {
       const node = this.editor.graph().nodes.find(item => item.id === alert.elementId);
       if (node) {
         if (this.floorId() !== node.floorId) this.selectFloor(node.floorId);
         this.editor.select({ kind: 'node', id: node.id });
-        this.graphCanvas()?.focusPoint(node.x, node.y);
-        this.tab.set('properties');
+        this.highlightPoint(node.x, node.y);
+        if (openProperties) this.tab.set('properties');
+        return;
       }
     }
     if (alert.elementType === 'CONNECTION' && alert.elementId) {
@@ -611,9 +798,45 @@ export class MapEditorComponent implements OnInit {
       if (source && this.floorId() !== source.floorId) this.selectFloor(source.floorId);
       this.editor.select({ kind: 'connection', id: alert.elementId });
       const target = link && this.editor.graph().nodes.find(item => item.id === link.targetNodeId);
-      if (source && target) this.graphCanvas()?.focusPoint((source.x + target.x) / 2, (source.y + target.y) / 2);
-      this.tab.set('properties');
+      if (source && target) this.highlightPoint(alert.point?.x ?? (source.x + target.x) / 2,
+        alert.point?.y ?? (source.y + target.y) / 2);
+      if (openProperties) this.tab.set('properties');
+      return;
     }
+    if (alert.elementType === 'WALL' && alert.elementId) {
+      const wall = this.editor.graph().walls?.find(item => item.id === alert.elementId);
+      if (wall) {
+        if (this.floorId() !== wall.floorId) this.selectFloor(wall.floorId);
+        this.editor.select({ kind: 'wall', id: wall.id });
+        this.highlightPoint((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
+        if (openProperties) this.tab.set('properties');
+        return;
+      }
+    }
+    if (alert.elementType === 'DOOR' && alert.elementId) {
+      const door = this.editor.graph().doors?.find(item => item.id === alert.elementId);
+      const wall = door && this.editor.graph().walls?.find(item => item.id === door.wallId);
+      if (door && wall) {
+        if (this.floorId() !== wall.floorId) this.selectFloor(wall.floorId);
+        const line = doorSegment(door, wall);
+        this.editor.select({ kind: 'door', id: door.id });
+        this.highlightPoint((line.x1 + line.x2) / 2, (line.y1 + line.y2) / 2);
+        if (openProperties) this.tab.set('properties');
+        return;
+      }
+    }
+    if (alert.candidateIndex !== undefined && this.backdrop()) {
+      const line = alert.elementType === 'WALL' ? this.backdrop()?.wallCandidates[alert.candidateIndex]
+        : this.backdrop()?.doors?.[alert.candidateIndex];
+      if (line) {
+        if (alert.elementType === 'WALL') this.highlightedWallCandidate.set(alert.candidateIndex);
+        else this.highlightedDoorCandidate.set(alert.candidateIndex);
+        this.highlightPoint((line.x1 + line.x2) / 2, (line.y1 + line.y2) / 2);
+        return;
+      }
+    }
+    this.highlightedPlan.set(true);
+    this.graphCanvas()?.fit();
   }
 
   save(): void {
@@ -648,7 +871,9 @@ export class MapEditorComponent implements OnInit {
   }
 
   private resetPreview(): void {
+    this.clearAlertHighlight();
     this.proposal.set(null);
+    this.unadoptedGeometry.set({ wallCandidates: [], doors: [] });
     this.previewEditor.load({ nodes: [], connections: [], destinations: [] }, []);
     this.generated.set(null);
     this.selectedLinkId.set(null);
