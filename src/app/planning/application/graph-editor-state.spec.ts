@@ -120,6 +120,28 @@ describe('GraphEditorState', () => {
     expect(state.graph().nodes).toHaveLength(1);
   });
 
+  it('undoes and redoes node deletion without changing walls or doors', () => {
+    const state = session();
+    const wall = { id: 'wall', floorId: 'f1', planVersionId: 'p1', x1: 50, y1: 0, x2: 50, y2: 60 };
+    const door = { id: 'door', wallId: wall.id, from: .4, to: .6 };
+    state.load({ nodes: [
+      { id: 'a', floorId: 'f1', planVersionId: 'p1', x: 0, y: 0, type: 'ACCESS' },
+      { id: 'b', floorId: 'f1', planVersionId: 'p1', x: 10, y: 0, type: 'DESTINATION' }
+    ], connections: [{ id: 'ab', sourceNodeId: 'a', targetNodeId: 'b', type: 'CORRIDOR',
+      distanceMeters: 5, weight: 5, verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true }],
+    destinations: [{ id: 'destination', nodeId: 'b', name: 'Caja', type: 'SERVICE', specialty: null }],
+    walls: [wall], doors: [door] }, [plan]);
+    state.select({ kind: 'node', id: 'b' });
+    expect(state.selectedNodeRemovalImpact()).toMatchObject({ destinations: [{ name: 'Caja' }], connections: [{ id: 'ab' }] });
+    state.deleteSelection();
+    expect(state.graph()).toMatchObject({ nodes: [{ id: 'a' }], connections: [], destinations: [], walls: [wall], doors: [door] });
+    state.undo();
+    expect(state.graph()).toMatchObject({ nodes: [{ id: 'a' }, { id: 'b' }], connections: [{ id: 'ab' }],
+      destinations: [{ id: 'destination' }], walls: [wall], doors: [door] });
+    state.redo();
+    expect(state.graph()).toMatchObject({ nodes: [{ id: 'a' }], connections: [], destinations: [], walls: [wall], doors: [door] });
+  });
+
   it('reconnects an existing arista in one undoable edit and keeps its selection', () => {
     const state = session();
     state.setTool('node');

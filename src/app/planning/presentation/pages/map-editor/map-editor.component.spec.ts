@@ -358,6 +358,61 @@ describe('MapEditorComponent', () => {
   describe('draft editing', () => {
     const addNode = (x: number, y: number) => { component.editor.setTool('node'); component.editor.canvasClick(x, y); };
 
+    it('confirms dependent destinations and connections before deleting, then saves and reloads unrelated geometry', () => {
+      const wall = { id: 'wall', floorId: 'floor', planVersionId: 'pv', x1: 50, y1: 0, x2: 50, y2: 60 };
+      const door = { id: 'door', wallId: wall.id, from: .4, to: .6 };
+      const graph: DraftSnapshot['graph'] = { nodes: [
+        { id: 'a', floorId: 'floor', planVersionId: 'pv', x: 0, y: 0, type: 'ACCESS' },
+        { id: 'b', floorId: 'floor', planVersionId: 'pv', x: 10, y: 0, type: 'DESTINATION' },
+        { id: 'c', floorId: 'floor', planVersionId: 'pv', x: 20, y: 0, type: 'DESTINATION' }
+      ], connections: [
+        { id: 'ab', sourceNodeId: 'a', targetNodeId: 'b', type: 'CORRIDOR', distanceMeters: 5,
+          weight: 5, verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true },
+        { id: 'bc', sourceNodeId: 'b', targetNodeId: 'c', type: 'CORRIDOR', distanceMeters: 5,
+          weight: 5, verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true }
+      ], destinations: [
+        { id: 'pharmacy', nodeId: 'b', type: 'SERVICE', name: 'Farmacia', specialty: null },
+        { id: 'cashier', nodeId: 'c', type: 'SERVICE', name: 'Caja', specialty: null }
+      ], walls: [wall], doors: [door] };
+      drafts.load.mockReturnValue(of(draft(0.5, graph)));
+      const fixture = create([svg]);
+      component.editor.select({ kind: 'node', id: 'c' });
+      fixture.detectChanges();
+      const remove = [...fixture.nativeElement.querySelectorAll('button')]
+        .find((button: HTMLButtonElement) => button.textContent?.includes('Eliminar nodo')) as HTMLButtonElement;
+      const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      try {
+        const before = component.editor.graph();
+        remove.click();
+        expect(confirmation).toHaveBeenCalledOnce();
+        expect(confirmation.mock.calls[0][0]).toContain('Destino «Caja»');
+        expect(confirmation.mock.calls[0][0]).toContain('Conexión con «Farmacia»');
+        expect(component.editor.graph()).toBe(before);
+        expect(component.editor.selection()).toEqual({ kind: 'node', id: 'c' });
+        expect(component.editor.dirty()).toBe(false);
+        expect(component.editor.canUndo()).toBe(false);
+        expect(drafts.save).not.toHaveBeenCalled();
+
+        confirmation.mockReturnValue(true);
+        remove.click();
+        expect(component.editor.graph()).toMatchObject({ nodes: [{ id: 'a' }, { id: 'b' }],
+          connections: [{ id: 'ab' }], destinations: [{ id: 'pharmacy' }], walls: [wall], doors: [door] });
+        component.undo();
+        expect(component.editor.graph()).toEqual(before);
+        component.redo();
+        const saved = { ...draft(0.5, component.editor.graph()), etag: '"rev-2"' };
+        drafts.save.mockReturnValue(of(saved));
+        component.save();
+        expect(drafts.save.mock.calls[0][1]).toMatchObject({ walls: [wall], doors: [door] });
+        drafts.load.mockReturnValue(of(saved));
+        component.reloadDraft();
+        expect(component.editor.graph()).toMatchObject({ nodes: [{ id: 'a' }, { id: 'b' }],
+          connections: [{ id: 'ab' }], destinations: [{ id: 'pharmacy' }], walls: [wall], doors: [door] });
+      } finally {
+        confirmation.mockRestore();
+      }
+    });
+
     it('enables wall and door tools and saves their geometry with the draft', () => {
       create([svg]);
       component.chooseTool('wall');

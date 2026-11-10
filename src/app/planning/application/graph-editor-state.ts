@@ -3,7 +3,7 @@ import { GraphConnection, GraphNode, MapWall, MapDoor } from '../domain/model/ma
 import { validWall, validDoor, crossingError, proposalGeometry } from '../domain/model/map-geometry';
 import {
   ConnectionPatch, ConnectionRejection, Destination, DestinationInput, EMPTY_GRAPH, EditorGraph, IdFactory, NodeType, PlanBounds,
-  addConnection, addNode, applyProposal, moveNode, planFor, randomId, removeConnection, removeNode, updateConnection, updateNodeType,
+  addConnection, addNode, applyProposal, moveNode, nodeRemovalImpact, planFor, randomId, removeConnection, removeNode, updateConnection, updateNodeType,
   upsertDestination
 } from '../domain/model/graph-model';
 import { GraphHistory } from './graph-history';
@@ -61,6 +61,10 @@ export class GraphEditorState {
   readonly selectedDestination = computed<Destination | null>(() => {
     const node = this.selectedNode();
     return node ? this.graph().destinations.find(entry => entry.nodeId === node.id) ?? null : null;
+  });
+  readonly selectedNodeRemovalImpact = computed(() => {
+    const node = this.selectedNode();
+    return node ? nodeRemovalImpact(this.graph(), node.id) : null;
   });
   readonly floorWalls = computed(() => (this.graph().walls ?? []).filter(wall => wall.floorId === this.floorId()));
   readonly floorDoors = computed(() => (this.graph().doors ?? []).filter(door => this.floorWalls().some(wall => wall.id === door.wallId)));

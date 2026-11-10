@@ -649,7 +649,27 @@ export class MapEditorComponent implements OnInit {
     const { from, to } = this.doorForm.getRawValue();
     this.activeEditor().updateDoor(door.id, from as number, to as number);
   }
-  deleteSelected(): void { this.activeEditor().deleteSelection(); this.syncPreviewGraph(); }
+  deleteSelected(): void {
+    const editing = this.activeEditor();
+    const node = editing.selectedNode();
+    const impact = editing.selectedNodeRemovalImpact();
+    if (node && impact && (impact.destinations.length || impact.connections.length)) {
+      const graph = editing.graph();
+      const nodeNumber = graph.nodes.findIndex(item => item.id === node.id) + 1;
+      const relatedNodeName = (id: string) => {
+        const destination = graph.destinations.find(entry => entry.nodeId === id);
+        return destination ? `«${destination.name}»` : `nodo ${graph.nodes.findIndex(item => item.id === id) + 1}`;
+      };
+      const dependencies = [
+        ...impact.destinations.map(destination => `• Destino «${destination.name}»`),
+        ...impact.connections.map(connection => `• Conexión con ${relatedNodeName(
+          connection.sourceNodeId === node.id ? connection.targetNodeId : connection.sourceNodeId)}`)
+      ];
+      if (!window.confirm(`Se eliminará el nodo ${nodeNumber} y también:\n${dependencies.join('\n')}\n¿Continuar?`)) return;
+    }
+    editing.deleteSelection();
+    this.syncPreviewGraph();
+  }
   undo(): void { this.activeEditor().undo(); this.syncPreviewGraph(); }
   redo(): void { this.activeEditor().redo(); this.syncPreviewGraph(); }
 
