@@ -90,7 +90,6 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .alerts li.error { background: var(--error-bg); border-color: #e0b4b5; color: var(--error); }
 .alert-item { display: block; width: 100%; min-height: 0; padding: 0; text-align: left; color: inherit; border: 0; background: transparent; font-size: .84rem; }
 .alert-item:disabled { cursor: default; color: inherit; background: transparent; }
-@media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); } .tools { grid-auto-flow: column; overflow-x: auto; } }
 
 .door { stroke: #c77700; stroke-linecap: butt; }
 .zone.isolated { stroke: #9f2629; }

@@ -47,6 +47,7 @@ describe('MapEditorComponent', () => {
     vi.clearAllMocks();
     sites.loadFloors.mockReturnValue(of([floor]));
     drafts.load.mockReturnValue(of(draft()));
+    plans.interpret.mockReturnValue(of(result()));
     TestBed.configureTestingModule({
       imports: [MapEditorComponent],
       providers: [provideRouter([]), { provide: SitesService, useValue: sites },
@@ -183,6 +184,20 @@ describe('MapEditorComponent', () => {
 
   describe('draft editing', () => {
     const addNode = (x: number, y: number) => { component.editor.setTool('node'); component.editor.canvasClick(x, y); };
+
+    it('restores rooms and walls from the draft plan while keeping the saved graph', () => {
+      const graph = { nodes: [{ id: 'saved', floorId: 'floor', planVersionId: 'pv', x: 25, y: 30, type: 'INTERSECTION' }],
+        connections: [], destinations: [] };
+      drafts.load.mockReturnValue(of(draft(0.5, graph)));
+      const fixture = create([svg]);
+      fixture.detectChanges();
+
+      expect(plans.interpret).toHaveBeenCalledWith('site', 'floor', 'pv');
+      expect(component.editor.graph().nodes).toEqual(graph.nodes);
+      expect(component.backdrop()?.zones).toEqual(proposal.zones);
+      expect(fixture.nativeElement.querySelector('.backdrop .zone')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.backdrop line')).not.toBeNull();
+    });
 
     it('loads the site draft into the editor on the selected floor', () => {
       create([svg]);

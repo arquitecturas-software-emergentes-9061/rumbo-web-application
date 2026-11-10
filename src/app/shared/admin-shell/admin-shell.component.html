@@ -24,13 +24,12 @@
       </svg>
       Clínicas y sedes
     </a>
-    <a routerLink="/planning/maps" routerLinkActive="active" [class.active]="editorMode()" ariaCurrentWhenActive="page">
+    <a routerLink="/planning/maps" routerLinkActive="active" ariaCurrentWhenActive="page">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/>
       </svg>
       Mapas
     </a>
-    @if (!editorMode()) {
     <a routerLink="/planning/map-editor" routerLinkActive="active" ariaCurrentWhenActive="page">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Zm9-13 4 4"/>
@@ -43,7 +42,6 @@
       </svg>
       Conexiones entre pisos
     </a>
-    }
     <a routerLink="/planning/beacons" routerLinkActive="active" ariaCurrentWhenActive="page">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 13a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm0 0v7M8.5 7.5a5 5 0 0 0 0 7m7-7a5 5 0 0 1 0 7M5.5 5a9 9 0 0 0 0 12m13-12a9 9 0 0 1 0 12"/>

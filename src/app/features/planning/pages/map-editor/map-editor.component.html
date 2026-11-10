@@ -1,4 +1,4 @@
-<app-admin-shell [context]="site()?.name ?? null" [editorMode]="true">
+<app-admin-shell [context]="site()?.name ?? null">
   <header class="page-heading">
     <nav class="breadcrumb" aria-label="Ubicación actual">
       <a routerLink="/planning/maps">Mapas</a>
@@ -162,6 +162,13 @@
           </div>
         } @else {
           <p class="hint tool-hint" role="status">{{ activeEditor().feedback() ?? toolHint() }}</p>
+          @if (backdropLoading()) {
+            <p class="backdrop-status" role="status">Cargando ambientes y muros del plano…</p>
+          } @else if (backdropUnavailable()) {
+            <p class="backdrop-status" role="status">No se pudo recuperar la geometría de este plano.
+              <button type="button" (click)="reloadBackdrop()">Reintentar</button>
+            </p>
+          }
           <app-graph-canvas [nodes]="activeEditor().floorNodes()" [connections]="activeEditor().floorConnections()"
             [destinations]="activeEditor().graph().destinations" [plan]="activeEditor().plan()" [tool]="activeEditor().tool()"
             [selection]="activeEditor().selection()" [pendingFrom]="activeEditor().pendingFrom()" [backdrop]="backdrop()"

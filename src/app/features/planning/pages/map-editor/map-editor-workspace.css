@@ -15,16 +15,20 @@ app-map-editor.map-editor-page .toolbar .history-button { min-width: 34px; paddi
 app-map-editor.map-editor-page .toolbar .history-button:disabled { background: #f7fafc; color: #b5c6d0; }
 app-map-editor.map-editor-page .toolbar .save { background: #fff; border: 1px solid #41627a; color: #1d4058; }
 app-map-editor.map-editor-page .preview-badge { border-color: #b9d0dc; background: #fff; color: #607b90; }
-app-map-editor.map-editor-page .editor { grid-template-columns: 52px minmax(0, 1fr) 292px; gap: 0; align-items: stretch; margin-top: 10px; border: 1px solid #d9e5ed; background: #fff; }
-app-map-editor.map-editor-page .tools { display: flex; flex-direction: column; gap: 2px; align-items: stretch; padding: 6px 4px; border: 0; border-right: 1px solid #d9e5ed; border-radius: 0; background: #eef5fa; }
-app-map-editor.map-editor-page .tools button { display: flex; flex-direction: column; gap: 1px; width: 44px; min-width: 44px; min-height: 48px; padding: 4px 1px; border: 0; border-radius: 0; color: #587590; font-size: 9px; text-align: center; }
-app-map-editor.map-editor-page .tools button.active { background: #dbeaf3; border: 0; border-left: 3px solid #1688b8; color: #183f5d; }
+app-map-editor.map-editor-page .editor { grid-template-columns: 104px minmax(0, 1fr) 292px; gap: 0; align-items: stretch; min-width: 0; margin-top: 10px; border: 1px solid #d9e5ed; background: #fff; }
+app-map-editor.map-editor-page .tools { display: flex; flex-direction: column; grid-auto-flow: initial; gap: 2px; align-items: stretch; min-width: 0; overflow: visible; padding: 6px 4px; border: 0; border-right: 1px solid #d9e5ed; border-radius: 0; background: #eef5fa; }
+app-map-editor.map-editor-page .tools button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 4px 5px; border: 0; border-radius: 0; color: #587590; font-size: 11px; text-align: center; white-space: normal; }
+app-map-editor.map-editor-page .tools button > span:last-child { display: block; width: 100%; min-width: 0; overflow-wrap: anywhere; }
+app-map-editor.map-editor-page .tools button.active { background: #dbeaf3; border: 0; color: #183f5d; }
+app-map-editor.map-editor-page .tools button.active::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: #1688b8; }
 app-map-editor.map-editor-page .tools button:disabled { color: #92a5b2; background: transparent; }
 app-map-editor.map-editor-page .tools .tool-icon { font-size: 18px; line-height: 21px; }
 app-map-editor.map-editor-page .tools .tool-icon svg { width: 20px; height: 20px; }
 app-map-editor.map-editor-page .tools .cancel-tool { color: #9b3b3b; }
-app-map-editor.map-editor-page .canvas.card { min-height: 540px; display: flex; flex-direction: column; gap: 0; padding: 0; border: 0; border-radius: 0; background: #f5f9fc; }
+app-map-editor.map-editor-page .canvas.card { min-height: 540px; min-width: 0; display: flex; flex-direction: column; gap: 0; padding: 0; border: 0; border-radius: 0; background: #f5f9fc; }
 app-map-editor.map-editor-page .tool-hint { min-height: 28px; margin: 0; padding: 6px 12px; background: #eaf3f8; color: #537088; font-size: 11px; }
+app-map-editor.map-editor-page .backdrop-status { margin: 0; padding: 7px 12px; background: #fff4de; color: #754d13; font-size: 12px; }
+app-map-editor.map-editor-page .backdrop-status button { margin-left: 6px; padding: 0; border: 0; background: none; color: #146d97; font: inherit; text-decoration: underline; cursor: pointer; }
 app-map-editor.map-editor-page .canvas .legend { align-self: flex-start; gap: 12px; margin: auto 12px 12px; padding: 6px 9px; border: 1px solid #dce6ed; background: #fff; font-size: 10px; }
 app-map-editor.map-editor-page .canvas .plan { max-height: 500px; border: 0; border-radius: 0; background: #f5f9fc; }
 app-map-editor.map-editor-page .side.card { min-height: 540px; padding: 0; border: 0; border-left: 1px solid #d9e5ed; border-radius: 0; background: #f7fafc; }
@@ -57,5 +61,5 @@ app-map-editor.map-editor-page .alerts .locate-button { justify-self: end; min-h
 app-map-editor.map-editor-page .alerts .repair-button { justify-self: stretch; min-height: 28px; border: 1px solid #258aad; border-radius: 0; background: linear-gradient(110deg, #1684c4, #07a99e); color: white; font-size: 10px; }
 app-map-editor.map-editor-page .model-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 12px; border-left: 4px solid #263d4c; background: #e8f1f6; color: #294a60; font-size: 11px; }
 app-map-editor.map-editor-page .model-warning strong { font-size: 10px; letter-spacing: .025em; }
-@media (max-width: 1000px) { app-map-editor.map-editor-page .editor { grid-template-columns: 52px minmax(0, 1fr); } app-map-editor.map-editor-page .side.card { grid-column: 1 / -1; min-height: 0; border-left: 0; border-top: 1px solid #d9e5ed; } }
-@media (max-width: 640px) { app-map-editor.map-editor-page .workflow-tabs { gap: 15px; } app-map-editor.map-editor-page .editor { grid-template-columns: 44px minmax(0, 1fr); } app-map-editor.map-editor-page .tools { padding-inline: 0; } app-map-editor.map-editor-page .tools button { width: 43px; min-width: 43px; } app-map-editor.map-editor-page .canvas.card { min-height: 400px; } }
+@media (max-width: 1000px) { app-map-editor.map-editor-page .editor { grid-template-columns: 104px minmax(0, 1fr); } app-map-editor.map-editor-page .side.card { grid-column: 1 / -1; min-height: 0; border-left: 0; border-top: 1px solid #d9e5ed; } }
+@media (max-width: 640px) { app-map-editor.map-editor-page .workflow-tabs { gap: 15px; } app-map-editor.map-editor-page .editor { grid-template-columns: 96px minmax(0, 1fr); } app-map-editor.map-editor-page .tools { padding-inline: 3px; } app-map-editor.map-editor-page .tools button { font-size: 10px; } app-map-editor.map-editor-page .canvas.card { min-height: 400px; } }

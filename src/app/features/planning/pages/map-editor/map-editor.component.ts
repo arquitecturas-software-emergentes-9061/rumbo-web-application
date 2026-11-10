@@ -42,6 +42,8 @@ export class MapEditorComponent implements OnInit {
   private readonly draftApi = inject(MapEditorApiService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly floorSelection = new Subject<{ siteId: string; floorId: string } | null>();
+  private readonly backdropCache = new Map<string, ModelProposal>();
+  private backdropRequest = 0;
 
   readonly editor = new GraphEditorState();
   readonly previewEditor = new GraphEditorState();
@@ -89,6 +91,8 @@ export class MapEditorComponent implements OnInit {
   readonly serverAlerts = signal<GraphAlert[]>([]);
   /** Rooms and walls of the last model applied to the draft, kept as read-only context. */
   readonly backdrop = signal<ModelProposal | null>(null);
+  readonly backdropLoading = signal(false);
+  readonly backdropUnavailable = signal(false);
 
   readonly zoneForm = this.fb.group({
     name: ['', [Validators.maxLength(150), (control: AbstractControl) => String(control.value).trim() ? null : { required: true }]],
@@ -243,7 +247,10 @@ export class MapEditorComponent implements OnInit {
     this.floorSelection.next(null);
     this.error.set(null);
     this.draft.set(null);
+    this.backdropRequest++;
     this.backdrop.set(null);
+    this.backdropLoading.set(false);
+    this.backdropUnavailable.set(false);
     this.editor.load({ nodes: [], connections: [], destinations: [] }, []);
     if (!id) { this.loading.set(false); return; }
     this.loading.set(true);
@@ -266,8 +273,9 @@ export class MapEditorComponent implements OnInit {
     this.editor.floorId.set(id);
     this.editor.select(null);
     const siteId = this.siteId();
-    if (!id || !siteId) { this.loading.set(false); this.floorSelection.next(null); return; }
+    if (!id || !siteId) { this.loading.set(false); this.floorSelection.next(null); this.restoreBackdrop(); return; }
     this.floorSelection.next({ siteId, floorId: id });
+    this.restoreBackdrop();
   }
 
   selectVersion(id: string): void {
@@ -284,6 +292,7 @@ export class MapEditorComponent implements OnInit {
         this.draft.set(snapshot);
         this.editor.load(snapshot?.graph ?? { nodes: [], connections: [], destinations: [] }, snapshot?.plans ?? []);
         if (this.floorId()) this.editor.floorId.set(this.floorId());
+        this.restoreBackdrop();
       },
       error: (error: HttpErrorResponse) => this.error.set(describeDraftLoadError(error))
     });
@@ -306,6 +315,7 @@ export class MapEditorComponent implements OnInit {
         this.editor.floorId.set(floorId);
         this.success.set('Borrador creado a partir del plano seleccionado. Ya puedes editar el mapa y guardarlo.');
         afterCreated?.();
+        if (!afterCreated) this.restoreBackdrop();
       },
       error: (error: HttpErrorResponse) => {
         if (error.error?.code === 'DRAFT_ALREADY_EXISTS') {
@@ -374,12 +384,52 @@ export class MapEditorComponent implements OnInit {
       return;
     }
     this.backdrop.set(current);
+    const siteId = this.siteId(), floorId = this.floorId(), planVersionId = this.editor.plan()?.planVersionId;
+    if (siteId && floorId && planVersionId) this.backdropCache.set(`${siteId}|${floorId}|${planVersionId}`, current);
+    this.backdropRequest++;
+    this.backdropLoading.set(false);
+    this.backdropUnavailable.set(false);
     this.resetPreview();
     this.tab.set('properties');
     this.success.set('Propuesta aplicada al borrador. Revísala y guarda los cambios.');
   }
 
   discardProposal(): void { this.resetPreview(); this.tab.set('properties'); }
+
+  reloadBackdrop(): void { this.restoreBackdrop(true); }
+
+  private restoreBackdrop(force = false): void {
+    const request = ++this.backdropRequest;
+    const siteId = this.siteId(), floorId = this.floorId();
+    const planVersionId = this.draft()?.plans.find(plan => plan.floorId === floorId)?.planVersionId;
+    this.backdrop.set(null);
+    this.backdropLoading.set(false);
+    this.backdropUnavailable.set(false);
+    if (!siteId || !floorId || !planVersionId) return;
+
+    const key = `${siteId}|${floorId}|${planVersionId}`;
+    const cached = !force && this.backdropCache.get(key);
+    if (cached) { this.backdrop.set(cached); return; }
+
+    this.backdropLoading.set(true);
+    this.plansApi.interpret(siteId, floorId, planVersionId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: result => {
+        if (request !== this.backdropRequest) return;
+        this.backdropLoading.set(false);
+        if (result.processing === 'SVG_CANDIDATES' && result.proposal && !isEmptyProposal(result.proposal)) {
+          this.backdropCache.set(key, result.proposal);
+          this.backdrop.set(result.proposal);
+        } else {
+          this.backdropUnavailable.set(true);
+        }
+      },
+      error: () => {
+        if (request !== this.backdropRequest) return;
+        this.backdropLoading.set(false);
+        this.backdropUnavailable.set(true);
+      }
+    });
+  }
 
   applyZoneCorrection(): void {
     const id = this.selectedZoneId(), current = this.proposal();
