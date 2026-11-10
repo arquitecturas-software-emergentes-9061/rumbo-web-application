@@ -80,6 +80,9 @@
     @if (blockedReason(); as reason) {
       <p class="hint" role="status">{{ reason }}</p>
     }
+    @if (editor.geometryError(); as geometryError) {
+      <p class="alert" role="alert">{{ geometryError }} Corrige el muro, la puerta o el tipo de arista antes de guardar.</p>
+    }
     @if (notice(); as message) {
       <p class="notice" role="status">{{ message }}</p>
     }
@@ -102,7 +105,9 @@
         <div class="tools" role="toolbar" aria-label="Herramientas de edición" aria-orientation="vertical">
           @for (item of tools; track item.id) {
             <button type="button" [class.active]="activeEditor().tool() === item.id" [attr.aria-pressed]="activeEditor().tool() === item.id"
-              [title]="item.hint" [disabled]="item.disabled || (!draft() && !proposal())" (click)="chooseTool(item.id)">
+              [title]="proposal() && (item.id === 'wall' || item.id === 'door') ? 'Aplica la propuesta al borrador para editar la geometría' : item.hint"
+              [disabled]="item.disabled || (!draft() && !proposal()) || (!!proposal() && (item.id === 'wall' || item.id === 'door'))"
+              (click)="chooseTool(item.id)">
               <span class="tool-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   @switch (item.id) {
@@ -134,12 +139,15 @@
             </span>
           </div>
           <app-graph-canvas [nodes]="previewEditor.floorNodes()" [connections]="previewEditor.floorConnections()"
+            [walls]="previewEditor.floorWalls()" [doors]="previewEditor.floorDoors()"
             [destinations]="previewEditor.graph().destinations" [plan]="previewEditor.plan()" [tool]="previewEditor.tool()"
             [selection]="previewEditor.selection()" [pendingFrom]="previewEditor.pendingFrom()" [backdrop]="current"
             [interactiveZones]="true" [selectedZoneId]="selectedZoneId()"
             (zonePicked)="selectZone($event)" (canvasPoint)="canvasPoint($event.x, $event.y)"
             (nodePicked)="nodePicked($event)" (connectionPicked)="connectionPicked($event)"
-            (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)" />
+            (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)"
+            (wallPicked)="wallPicked($event)" (doorPicked)="doorPicked($event)"
+            (wallMoved)="wallMoved($event)" (doorMoved)="doorMoved($event)" />
           <ul class="legend" aria-label="Leyenda">
             <li><span class="swatch node-s"></span>Nodo</li>
             <li><span class="swatch edge-s"></span>Arista</li>
@@ -170,10 +178,13 @@
             </p>
           }
           <app-graph-canvas [nodes]="activeEditor().floorNodes()" [connections]="activeEditor().floorConnections()"
+            [walls]="activeEditor().floorWalls()" [doors]="activeEditor().floorDoors()"
             [destinations]="activeEditor().graph().destinations" [plan]="activeEditor().plan()" [tool]="activeEditor().tool()"
             [selection]="activeEditor().selection()" [pendingFrom]="activeEditor().pendingFrom()" [backdrop]="backdrop()"
             (canvasPoint)="canvasPoint($event.x, $event.y)" (nodePicked)="nodePicked($event)"
-            (connectionPicked)="connectionPicked($event)" (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)" />
+            (connectionPicked)="connectionPicked($event)" (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)"
+            (wallPicked)="wallPicked($event)" (doorPicked)="doorPicked($event)"
+            (wallMoved)="wallMoved($event)" (doorMoved)="doorMoved($event)" />
           <ul class="legend" aria-label="Leyenda">
             <li><span class="swatch dot access"></span>Acceso</li>
             <li><span class="swatch dot dest"></span>Destino</li>
@@ -221,6 +232,27 @@
                 <p class="warn-box">Ninguna conexión reconocida llega a este ambiente.</p>
               }
               <p class="hint">Al aplicar la propuesta, los consultorios y servicios con nombre se crean como destinos, y los ascensores y escaleras como conexiones verticales.</p>
+          } @else if (activeEditor().selectedWall(); as wall) {
+            <h2>Propiedades del muro</h2>
+            <p class="mono id">ID: {{ wall.id }}</p>
+            <form [formGroup]="wallForm" (ngSubmit)="applyWall()">
+              <div class="pair"><label>X inicial <input type="number" step="0.1" formControlName="x1" /></label>
+                <label>Y inicial <input type="number" step="0.1" formControlName="y1" /></label></div>
+              <div class="pair"><label>X final <input type="number" step="0.1" formControlName="x2" /></label>
+                <label>Y final <input type="number" step="0.1" formControlName="y2" /></label></div>
+              <button type="submit" class="primary">Aplicar cambios</button>
+              <button type="button" class="outline danger" (click)="deleteSelected()">Eliminar muro y sus puertas</button>
+            </form>
+          } @else if (activeEditor().selectedDoor(); as door) {
+            <h2>Propiedades de la puerta</h2>
+            <p class="mono id">ID: {{ door.id }}</p>
+            <form [formGroup]="doorForm" (ngSubmit)="applyDoor()">
+              <p class="hint">Posición sobre el muro, de 0 a 1.</p>
+              <div class="pair"><label>Inicio <input type="number" min="0" max="1" step="0.01" formControlName="from" /></label>
+                <label>Fin <input type="number" min="0" max="1" step="0.01" formControlName="to" /></label></div>
+              <button type="submit" class="primary">Aplicar cambios</button>
+              <button type="button" class="outline danger" (click)="deleteSelected()">Eliminar puerta</button>
+            </form>
           } @else if (activeEditor().selectedNode(); as node) {
             <h2>Propiedades del nodo</h2>
             <p class="mono id">ID: {{ node.id }}</p>
@@ -306,6 +338,8 @@
               <dt>Nodos</dt><dd>{{ activeEditor().graph().nodes.length }}</dd>
               <dt>Aristas</dt><dd>{{ activeEditor().graph().connections.length }}</dd>
               <dt>Destinos</dt><dd>{{ activeEditor().graph().destinations.length }}</dd>
+              <dt>Muros</dt><dd>{{ activeEditor().graph().walls?.length ?? 0 }}</dd>
+              <dt>Puertas</dt><dd>{{ activeEditor().graph().doors?.length ?? 0 }}</dd>
             </dl>
             <p class="hint">Selecciona un nodo o una arista para editar sus propiedades.</p>
           }

@@ -32,3 +32,8 @@
 .backdrop line { stroke: #142e44; stroke-linecap: round; }
 .backdrop text { fill: var(--muted); }
 .backdrop .door { stroke: #c77700; }
+.editable-wall { stroke: #173b52; pointer-events: none; }
+.editable-wall.selected { stroke: #1688b8; }
+.editable-door { stroke: #e89b24; pointer-events: none; }
+.editable-door.selected { stroke: #1688b8; }
+.geometry-hit { stroke: transparent; cursor: pointer; }

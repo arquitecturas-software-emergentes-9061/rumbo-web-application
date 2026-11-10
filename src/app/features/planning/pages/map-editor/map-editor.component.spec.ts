@@ -185,6 +185,21 @@ describe('MapEditorComponent', () => {
   describe('draft editing', () => {
     const addNode = (x: number, y: number) => { component.editor.setTool('node'); component.editor.canvasClick(x, y); };
 
+    it('enables wall and door tools and saves their geometry with the draft', () => {
+      create([svg]);
+      component.chooseTool('wall');
+      component.canvasPoint(20, 10); component.canvasPoint(20, 50);
+      const wall = component.editor.selectedWall();
+      expect(wall).not.toBeNull();
+      component.chooseTool('door'); component.wallPicked({ id: wall!.id, fraction: .5 });
+      expect(component.editor.selectedDoor()?.wallId).toBe(wall!.id);
+      expect(component.canSave()).toBe(true);
+      drafts.save.mockReturnValue(of(draft()));
+      component.save();
+      expect(drafts.save.mock.calls[0][1].walls).toHaveLength(1);
+      expect(drafts.save.mock.calls[0][1].doors).toHaveLength(1);
+    });
+
     it('restores rooms and walls from the draft plan while keeping the saved graph', () => {
       const graph = { nodes: [{ id: 'saved', floorId: 'floor', planVersionId: 'pv', x: 25, y: 30, type: 'INTERSECTION' }],
         connections: [], destinations: [] };

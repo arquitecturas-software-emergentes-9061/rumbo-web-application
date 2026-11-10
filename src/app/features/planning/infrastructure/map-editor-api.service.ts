@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpResponse } from '@angular/common/htt
 import { Injectable, inject } from '@angular/core';
 import { catchError, map, of, throwError } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { GraphConnection, GraphNode, Destination, EditorGraph, PlanBounds } from '../domain/model/map-graph.types';
+import { GraphConnection, GraphNode, Destination, EditorGraph, PlanBounds, MapWall, MapDoor } from '../domain/model/map-graph.types';
 import { GraphAlert, ServerIssue, fromServerIssues } from '../domain/model/graph-validation';
 
 export interface DraftSnapshot {
@@ -23,6 +23,8 @@ interface DraftResponse {
   nodes: GraphNode[];
   connections: GraphConnection[];
   destinations: Destination[];
+  walls?: MapWall[];
+  doors?: MapDoor[];
 }
 
 export type SaveFailureKind = 'stale' | 'not-draft' | 'invalid' | 'offline' | 'forbidden' | 'missing' | 'other';
@@ -54,7 +56,7 @@ export class MapEditorApiService {
   save(snapshot: DraftSnapshot, graph: EditorGraph) {
     const url = `${this.mapsUrl(snapshot.siteId)}/${encodeURIComponent(snapshot.mapId)}/versions/${encodeURIComponent(snapshot.modelVersionId)}/graph`;
     const body = {
-      nodes: graph.nodes, connections: graph.connections,
+      nodes: graph.nodes, connections: graph.connections, walls: graph.walls ?? [], doors: graph.doors ?? [],
       destinations: graph.destinations.map(({ id, nodeId, type, name, specialty }) => ({ id, nodeId, type, name, specialty }))
     };
     return this.http.put<DraftResponse>(url, body, { headers: { 'If-Match': snapshot.etag }, observe: 'response' })
@@ -72,7 +74,8 @@ export class MapEditorApiService {
     return {
       siteId: body.siteId, mapId: body.mapId, modelVersionId: body.modelVersionId, etag,
       plans: (body.plans ?? []).map(plan => ({ ...plan, metersPerUnit: plan.metersPerUnit ?? null })),
-      graph: { nodes: body.nodes, connections: body.connections, destinations: body.destinations }
+      graph: { nodes: body.nodes, connections: body.connections, destinations: body.destinations,
+        walls: body.walls ?? [], doors: body.doors ?? [] }
     };
   }
 }

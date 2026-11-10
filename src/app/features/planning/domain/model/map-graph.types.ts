@@ -41,8 +41,19 @@ export interface PlanBounds {
   metersPerUnit: number | null;
 }
 
+export interface MapWall {
+  id: string; floorId: string; planVersionId: string;
+  x1: number; y1: number; x2: number; y2: number;
+}
+
+export interface MapDoor {
+  id: string; wallId: string; from: number; to: number;
+}
+
 export interface EditorGraph {
   nodes: GraphNode[];
   connections: GraphConnection[];
   destinations: Destination[];
+  walls?: MapWall[];
+  doors?: MapDoor[];
 }

@@ -1,6 +1,7 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { GraphConnection, GraphNode } from '../interfloor-connections/draft-graph.service';
-import { Destination, PlanBounds } from '../../domain/model/map-graph.types';
+import { Destination, PlanBounds, MapWall, MapDoor } from '../../domain/model/map-graph.types';
+import { doorSegment } from '../../domain/model/map-geometry';
 import { Selection, Tool } from '../../application/graph-editor-state';
 import { ModelProposal, polygonPath, zoneFill, zonePath } from './model-preview';
 
@@ -26,6 +27,8 @@ export class GraphCanvasComponent {
   readonly tool = input<Tool>('select');
   readonly selection = input<Selection | null>(null);
   readonly pendingFrom = input<string | null>(null);
+  readonly walls = input<MapWall[]>([]);
+  readonly doors = input<MapDoor[]>([]);
   /** Rooms and walls of the last applied model, drawn read-only behind the graph for context. */
   readonly backdrop = input<ModelProposal | null>(null);
   readonly interactiveZones = input(false);
@@ -38,6 +41,17 @@ export class GraphCanvasComponent {
   readonly connectionPicked = output<string>();
   readonly nodeMoved = output<{ id: string; x: number; y: number }>();
   readonly zonePicked = output<string>();
+  readonly wallPicked = output<{ id: string; fraction: number }>();
+  readonly doorPicked = output<string>();
+  readonly wallMoved = output<{ id: string; x1: number; y1: number; x2: number; y2: number }>();
+  readonly doorMoved = output<{ id: string; from: number; to: number }>();
+  protected readonly doorSegment = doorSegment;
+  protected readonly doorLines = computed(() => this.doors().flatMap(door => {
+    const wall = this.walls().find(item => item.id === door.wallId);
+    return wall ? [{ door, segment: doorSegment(door, wall) }] : [];
+  }));
+  protected readonly geometryDrag = signal<{ kind: 'wall' | 'door'; id: string; x: number; y: number;
+    wall?: MapWall; door?: MapDoor; moved: boolean } | null>(null);
 
   protected readonly drag = signal<DragState | null>(null);
 
@@ -103,7 +117,7 @@ export class GraphCanvasComponent {
     return this.destinations().find(entry => entry.nodeId === node.id)?.name ?? '';
   }
 
-  protected isSelected(kind: 'node' | 'connection', id: string): boolean {
+  protected isSelected(kind: Selection['kind'], id: string): boolean {
     const current = this.selection();
     return current?.kind === kind && current.id === id;
   }
@@ -122,10 +136,60 @@ export class GraphCanvasComponent {
   }
 
   protected pointerMoved(event: PointerEvent): void {
+    const geometry = this.geometryDrag();
+    if (geometry) {
+      const point = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
+      if (point) this.geometryDrag.set({ ...geometry, moved: true, x: point.x, y: point.y });
+      return;
+    }
     const current = this.drag();
     if (!current) return;
     const point = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
     if (point) this.drag.set({ ...current, ...point, moved: true });
+  }
+
+  protected geometryDown(event: PointerEvent, kind: 'wall' | 'door', id: string): void {
+    if (this.tool() !== 'select' && this.tool() !== 'move') return;
+    const point = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
+    if (!point) return;
+    event.stopPropagation();
+    (event.currentTarget as Element).setPointerCapture?.(event.pointerId);
+    this.geometryDrag.set({ kind, id, ...point,
+      wall: this.walls().find(wall => wall.id === id), door: this.doors().find(door => door.id === id), moved: false });
+  }
+
+  protected geometryUp(event: PointerEvent): void {
+    const start = this.geometryDrag();
+    if (!start) return;
+    event.stopPropagation();
+    this.geometryDrag.set(null);
+    const end = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
+    if (!end || !start.moved) {
+      if (start.kind === 'wall') this.wallPicked.emit({ id: start.id, fraction: 0.5 });
+      else this.doorPicked.emit(start.id);
+      return;
+    }
+    if (start.kind === 'wall' && start.wall) {
+      const dx = end.x - start.x, dy = end.y - start.y;
+      this.wallMoved.emit({ id: start.id, x1: start.wall.x1 + dx, y1: start.wall.y1 + dy,
+        x2: start.wall.x2 + dx, y2: start.wall.y2 + dy });
+    } else if (start.kind === 'door' && start.door) {
+      const wall = this.walls().find(item => item.id === start.door?.wallId);
+      if (!wall) return;
+      const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+      const shift = ((end.x - start.x) * dx + (end.y - start.y) * dy) / (dx * dx + dy * dy);
+      this.doorMoved.emit({ id: start.id, from: start.door.from + shift, to: start.door.to + shift });
+    }
+  }
+
+  protected wallClicked(event: MouseEvent, wall: MapWall): void {
+    event.stopPropagation();
+    if (this.tool() !== 'wall' && this.tool() !== 'door' && this.tool() !== 'select') return;
+    const point = this.toPlan(event.clientX, event.clientY, event.currentTarget as SVGGraphicsElement);
+    const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+    const fraction = point ? Math.max(0, Math.min(1,
+      ((point.x - wall.x1) * dx + (point.y - wall.y1) * dy) / (dx * dx + dy * dy))) : 0.5;
+    this.wallPicked.emit({ id: wall.id, fraction });
   }
 
   protected pointerUp(event: PointerEvent, node: GraphNode): void {

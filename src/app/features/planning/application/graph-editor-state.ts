@@ -1,5 +1,6 @@
 import { computed, signal } from '@angular/core';
-import { GraphConnection, GraphNode } from '../domain/model/map-graph.types';
+import { GraphConnection, GraphNode, MapWall, MapDoor } from '../domain/model/map-graph.types';
+import { validWall, validDoor, crossingError, proposalGeometry } from '../domain/model/map-geometry';
 import {
   ConnectionPatch, ConnectionRejection, Destination, DestinationInput, EMPTY_GRAPH, EditorGraph, IdFactory, NodeType, PlanBounds,
   addConnection, addNode, applyProposal, moveNode, planFor, randomId, removeConnection, removeNode, updateConnection, updateNodeType,
@@ -10,8 +11,8 @@ import { GraphAlert, validateGraph } from '../domain/model/graph-validation';
 import { ModelProposal } from '../domain/model/plan-interpretation';
 import { ConnectionEnd, reconnectConnection } from '../domain/model/reconnect-connection';
 
-export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'move' | 'reconnect';
-export type Selection = { kind: 'node' | 'connection'; id: string };
+export type Tool = 'select' | 'node' | 'edge' | 'destination' | 'move' | 'reconnect' | 'wall' | 'door';
+export type Selection = { kind: 'node' | 'connection' | 'wall' | 'door'; id: string };
 
 const REJECTIONS: Record<ConnectionRejection, string> = {
   SAME_NODE: 'Elige dos nodos distintos para crear la arista.',
@@ -29,6 +30,7 @@ export class GraphEditorState {
   readonly selection = signal<Selection | null>(null);
   readonly pendingFrom = signal<string | null>(null);
   readonly reconnecting = signal<{ connectionId: string; end: ConnectionEnd } | null>(null);
+  readonly pendingWall = signal<{ x: number; y: number } | null>(null);
   readonly feedback = signal<string | null>(null);
 
   private readonly baseline = signal(JSON.stringify(EMPTY_GRAPH));
@@ -38,6 +40,7 @@ export class GraphEditorState {
   constructor(private readonly newId: IdFactory = randomId) {}
 
   readonly dirty = computed(() => JSON.stringify(this.graph()) !== this.baseline());
+  readonly geometryError = computed(() => crossingError(this.graph()));
   readonly canUndo = computed(() => (this.revision(), this.history.canUndo));
   readonly canRedo = computed(() => (this.revision(), this.history.canRedo));
   readonly plan = computed(() => { const id = this.floorId(); return id ? planFor(this.plans(), id) : null; });
@@ -59,12 +62,19 @@ export class GraphEditorState {
     const node = this.selectedNode();
     return node ? this.graph().destinations.find(entry => entry.nodeId === node.id) ?? null : null;
   });
+  readonly floorWalls = computed(() => (this.graph().walls ?? []).filter(wall => wall.floorId === this.floorId()));
+  readonly floorDoors = computed(() => (this.graph().doors ?? []).filter(door => this.floorWalls().some(wall => wall.id === door.wallId)));
+  readonly selectedWall = computed(() => this.selection()?.kind === 'wall'
+    ? this.graph().walls?.find(wall => wall.id === this.selection()?.id) ?? null : null);
+  readonly selectedDoor = computed(() => this.selection()?.kind === 'door'
+    ? this.graph().doors?.find(door => door.id === this.selection()?.id) ?? null : null);
 
   /** Replaces the working copy with a freshly loaded or saved draft. */
   load(graph: EditorGraph, plans: PlanBounds[]): void {
-    this.graph.set(graph);
+    const complete = { ...graph, walls: graph.walls ?? [], doors: graph.doors ?? [] };
+    this.graph.set(complete);
     this.plans.set(plans);
-    this.baseline.set(JSON.stringify(graph));
+    this.baseline.set(JSON.stringify(complete));
     this.history.clear();
     this.revision.update(value => value + 1);
     this.selection.set(null);
@@ -72,6 +82,7 @@ export class GraphEditorState {
     this.pendingFrom.set(null);
     this.reconnecting.set(null);
     this.feedback.set(null);
+    this.pendingWall.set(null);
     if (!plans.some(plan => plan.floorId === this.floorId())) this.floorId.set(plans[0]?.floorId ?? null);
   }
 
@@ -80,11 +91,24 @@ export class GraphEditorState {
     this.pendingFrom.set(null);
     this.reconnecting.set(null);
     this.feedback.set(null);
+    this.pendingWall.set(null);
   }
 
   select(selection: Selection | null): void { this.selection.set(selection); }
 
   canvasClick(x: number, y: number): void {
+    if (this.tool() === 'wall') {
+      const start = this.pendingWall(), plan = this.plan();
+      if (!start) { this.pendingWall.set({ x, y }); this.feedback.set('Marca el segundo extremo del muro.'); return; }
+      this.pendingWall.set(null);
+      if (!plan) return;
+      const wall: MapWall = { id: this.newId(), floorId: plan.floorId, planVersionId: plan.planVersionId,
+        x1: start.x, y1: start.y, x2: x, y2: y };
+      if (!validWall(wall, plan)) { this.feedback.set('El muro debe estar dentro del plano y tener longitud.'); return; }
+      const next = { ...this.graph(), walls: [...(this.graph().walls ?? []), wall] };
+      this.commit(next); this.select({ kind: 'wall', id: wall.id });
+      this.feedback.set(crossingError(next)); return;
+    }
     if (this.tool() !== 'node') { if (this.tool() === 'select') this.select(null); return; }
     const plan = this.plan();
     if (!plan) return;
@@ -110,6 +134,36 @@ export class GraphEditorState {
   connectionClick(id: string): void {
     if (this.tool() === 'edge' || this.tool() === 'node' || this.tool() === 'destination') return;
     this.select({ kind: 'connection', id });
+  }
+
+  wallClick(id: string, fraction = 0.5): void {
+    if (this.tool() === 'door') {
+      const door: MapDoor = { id: this.newId(), wallId: id, from: Math.max(0, fraction - 0.08), to: Math.min(1, fraction + 0.08) };
+      if (!validDoor(door, this.graph())) { this.feedback.set('La abertura se superpone con otra puerta.'); return; }
+      const next = { ...this.graph(), doors: [...(this.graph().doors ?? []), door] };
+      this.commit(next); this.select({ kind: 'door', id: door.id }); this.feedback.set(null); return;
+    }
+    this.select({ kind: 'wall', id });
+  }
+
+  doorClick(id: string): void { this.select({ kind: 'door', id }); }
+
+  updateWall(id: string, patch: Pick<MapWall, 'x1' | 'y1' | 'x2' | 'y2'>): void {
+    const current = this.graph().walls?.find(wall => wall.id === id), plan = this.plan();
+    if (!current) return;
+    const wall = { ...current, ...patch };
+    if (!validWall(wall, plan)) { this.feedback.set('El muro debe quedar dentro del plano.'); return; }
+    const next = { ...this.graph(), walls: this.graph().walls?.map(item => item.id === id ? wall : item) };
+    this.commit(next); this.feedback.set(crossingError(next));
+  }
+
+  updateDoor(id: string, from: number, to: number): void {
+    const current = this.graph().doors?.find(door => door.id === id);
+    if (!current) return;
+    const door = { ...current, from, to };
+    if (!validDoor(door, this.graph())) { this.feedback.set('Abertura inválida o superpuesta.'); return; }
+    const next = { ...this.graph(), doors: this.graph().doors?.map(item => item.id === id ? door : item) };
+    this.commit(next); this.feedback.set(crossingError(next));
   }
 
   moveTo(id: string, x: number, y: number): void {
@@ -149,7 +203,14 @@ export class GraphEditorState {
   deleteSelection(): void {
     const current = this.selection();
     if (!current) return;
-    this.commit(current.kind === 'node' ? removeNode(this.graph(), current.id) : removeConnection(this.graph(), current.id));
+    const graph = this.graph();
+    const next = current.kind === 'node' ? removeNode(graph, current.id)
+      : current.kind === 'connection' ? removeConnection(graph, current.id)
+      : current.kind === 'wall' ? { ...graph, walls: graph.walls?.filter(wall => wall.id !== current.id),
+          doors: graph.doors?.filter(door => door.wallId !== current.id) }
+      : { ...graph, doors: graph.doors?.filter(door => door.id !== current.id) };
+    this.commit(next);
+    this.feedback.set(crossingError(next));
     this.selection.set(null);
     this.reconnecting.set(null);
   }
@@ -157,7 +218,12 @@ export class GraphEditorState {
   applyGenerated(proposal: ModelProposal): boolean {
     const plan = this.plan();
     if (!plan || plan.metersPerUnit === null) return false;
-    this.commit(applyProposal(this.graph(), proposal, plan, this.newId));
+    const generated = applyProposal(this.graph(), proposal, plan, this.newId);
+    const walls = (this.graph().walls ?? []).filter(wall => wall.floorId !== plan.floorId);
+    const retainedIds = new Set(walls.map(wall => wall.id));
+    const doors = (this.graph().doors ?? []).filter(door => retainedIds.has(door.wallId));
+    const geometry = proposalGeometry(proposal, plan, { ...generated, walls, doors }, this.newId);
+    this.commit({ ...generated, ...geometry });
     this.selection.set(null);
     return true;
   }
@@ -171,6 +237,7 @@ export class GraphEditorState {
     const result = addConnection(this.graph(), from, id, this.plans(), this.newId());
     this.pendingFrom.set(null);
     if (result.rejected) { this.feedback.set(REJECTIONS[result.rejected]); return; }
+    if (crossingError(result.graph)) { this.feedback.set('La arista atraviesa un muro; crea una puerta y usa DOORWAY.'); return; }
     this.commit(result.graph);
     const created = result.graph.connections[result.graph.connections.length - 1];
     this.select({ kind: 'connection', id: created.id });
@@ -200,8 +267,10 @@ export class GraphEditorState {
     this.graph.set(snapshot);
     this.revision.update(value => value + 1);
     const current = this.selection();
-    const exists = current && (current.kind === 'node'
-      ? snapshot.nodes.some(node => node.id === current.id) : snapshot.connections.some(item => item.id === current.id));
+    const exists = current && (current.kind === 'node' ? snapshot.nodes.some(node => node.id === current.id)
+      : current.kind === 'connection' ? snapshot.connections.some(item => item.id === current.id)
+      : current.kind === 'wall' ? snapshot.walls?.some(item => item.id === current.id)
+      : snapshot.doors?.some(item => item.id === current.id));
     if (!exists) this.selection.set(null);
   }
 }

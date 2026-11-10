@@ -53,12 +53,12 @@ export class MapEditorComponent implements OnInit {
   readonly connectionTypes = CONNECTION_TYPES;
   readonly destinationTypes = DESTINATION_TYPES;
   readonly zoneCategories = ZONE_CATEGORIES;
-  readonly tools: { id: Tool | 'wall' | 'door'; label: string; hint: string; disabled?: boolean }[] = [
+  readonly tools: { id: Tool; label: string; hint: string; disabled?: boolean }[] = [
     { id: 'select', label: 'Seleccionar', hint: 'Elige un nodo o una arista' },
     { id: 'node', label: 'Nodo', hint: 'Haz clic en el plano para agregar un nodo' },
     { id: 'edge', label: 'Arista', hint: 'Elige dos nodos para conectarlos' },
-    { id: 'wall', label: 'Muro', hint: 'La edición geométrica de muros requiere soporte del plano y la API', disabled: true },
-    { id: 'door', label: 'Puerta', hint: 'La edición geométrica de puertas requiere soporte del plano y la API', disabled: true },
+    { id: 'wall', label: 'Muro', hint: 'Marca dos extremos para crear un muro; selecciona uno para editarlo' },
+    { id: 'door', label: 'Puerta', hint: 'Haz clic sobre un muro para abrir una puerta' },
     { id: 'destination', label: 'Destino', hint: 'Elige un nodo para marcarlo como destino' },
     { id: 'move', label: 'Mover', hint: 'Arrastra un nodo; también puedes usar las flechas' }
   ];
@@ -115,6 +115,14 @@ export class MapEditorComponent implements OnInit {
     accessibility: this.fb.control<ConnectionAccessibility>('UNKNOWN'),
     bidirectional: [true]
   });
+  readonly wallForm = this.fb.group({
+    x1: this.fb.control<number | null>(0, Validators.required), y1: this.fb.control<number | null>(0, Validators.required),
+    x2: this.fb.control<number | null>(0, Validators.required), y2: this.fb.control<number | null>(0, Validators.required)
+  });
+  readonly doorForm = this.fb.group({
+    from: this.fb.control<number | null>(0, [Validators.required, Validators.min(0), Validators.max(1)]),
+    to: this.fb.control<number | null>(0, [Validators.required, Validators.min(0), Validators.max(1)])
+  });
 
   readonly site = computed(() => this.sites().find(item => item.id === this.siteId()) ?? null);
   readonly floor = computed(() => this.floors().find(item => item.id === this.floorId()) ?? null);
@@ -160,7 +168,8 @@ export class MapEditorComponent implements OnInit {
   });
   readonly graphErrorCount = computed(() => countErrors(this.graphAlerts()));
   readonly reachability = computed(() => destinationReachability(this.editor.graph()));
-  readonly canSave = computed(() => !!this.draft() && !this.proposal() && this.editor.dirty() && !this.saving());
+  readonly canSave = computed(() => !!this.draft() && !this.proposal() && this.editor.dirty()
+    && !this.editor.geometryError() && !this.saving());
   /** A site without any map can start its first draft from the plan selected for the current floor. */
   readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
     && !!this.siteId() && !!this.floorId() && !!this.versionId());
@@ -175,6 +184,8 @@ export class MapEditorComponent implements OnInit {
       const node = editing.selectedNode();
       const entry = editing.selectedDestination();
       const link = editing.selectedConnection();
+      const wall = editing.selectedWall();
+      const door = editing.selectedDoor();
       const zone = this.selectedZone();
       if (zone) this.zoneForm.reset({ name: zone.name, category: zone.category.toUpperCase() });
       if (node) {
@@ -189,6 +200,8 @@ export class MapEditorComponent implements OnInit {
           accessibility: link.accessibility as ConnectionAccessibility, bidirectional: link.bidirectional
         });
       }
+      if (wall) this.wallForm.reset({ x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2 });
+      if (door) this.doorForm.reset({ from: door.from, to: door.to });
     });
   }
 
@@ -472,8 +485,7 @@ export class MapEditorComponent implements OnInit {
     return from && to ? { x1: from.x, y1: from.y, x2: to.x, y2: to.y } : null;
   }
 
-  chooseTool(tool: Tool | 'wall' | 'door'): void {
-    if (tool === 'wall' || tool === 'door') return;
+  chooseTool(tool: Tool): void {
     this.activeEditor().setTool(tool);
   }
 
@@ -490,6 +502,29 @@ export class MapEditorComponent implements OnInit {
     if (this.activeEditor().selection()) this.tab.set('properties');
   }
   nodeMoved(id: string, x: number, y: number): void { this.activeEditor().moveTo(id, x, y); this.syncPreviewGraph(); }
+  wallPicked(event: { id: string; fraction: number }): void {
+    this.selectedZoneId.set(null); this.activeEditor().wallClick(event.id, event.fraction); this.tab.set('properties');
+  }
+  doorPicked(id: string): void {
+    this.selectedZoneId.set(null); this.activeEditor().doorClick(id); this.tab.set('properties');
+  }
+  wallMoved(event: { id: string; x1: number; y1: number; x2: number; y2: number }): void {
+    this.activeEditor().updateWall(event.id, event);
+  }
+  doorMoved(event: { id: string; from: number; to: number }): void {
+    this.activeEditor().updateDoor(event.id, event.from, event.to);
+  }
+  applyWall(): void {
+    const wall = this.activeEditor().selectedWall();
+    if (!wall || this.wallForm.invalid) return this.wallForm.markAllAsTouched();
+    this.activeEditor().updateWall(wall.id, this.wallForm.getRawValue() as { x1: number; y1: number; x2: number; y2: number });
+  }
+  applyDoor(): void {
+    const door = this.activeEditor().selectedDoor();
+    if (!door || this.doorForm.invalid) return this.doorForm.markAllAsTouched();
+    const { from, to } = this.doorForm.getRawValue();
+    this.activeEditor().updateDoor(door.id, from as number, to as number);
+  }
   deleteSelected(): void { this.activeEditor().deleteSelection(); this.syncPreviewGraph(); }
   undo(): void { this.activeEditor().undo(); this.syncPreviewGraph(); }
   redo(): void { this.activeEditor().redo(); this.syncPreviewGraph(); }

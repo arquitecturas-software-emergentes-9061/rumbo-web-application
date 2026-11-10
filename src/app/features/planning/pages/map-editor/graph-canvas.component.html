@@ -32,6 +32,31 @@
         }
       </g>
     }
+    <g class="editable-geometry">
+      @for (wall of walls(); track wall.id) {
+        <line class="editable-wall" [class.selected]="isSelected('wall', wall.id)"
+          [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
+          [attr.stroke-width]="unit() * 2" />
+        <line class="geometry-hit" [attr.x1]="wall.x1" [attr.y1]="wall.y1"
+          [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 12"
+          role="button" tabindex="0" aria-label="Muro"
+          (pointerdown)="geometryDown($event, 'wall', wall.id)" (pointerup)="geometryUp($event)"
+          (click)="wallClicked($event, wall)" (keydown.enter)="wallPicked.emit({ id: wall.id, fraction: 0.5 })" />
+      }
+      @for (entry of doorLines(); track entry.door.id) {
+          <line class="editable-door" [class.selected]="isSelected('door', entry.door.id)"
+            [attr.x1]="entry.segment.x1" [attr.y1]="entry.segment.y1"
+            [attr.x2]="entry.segment.x2" [attr.y2]="entry.segment.y2"
+            [attr.stroke-width]="unit() * 5" />
+          <line class="geometry-hit" [attr.x1]="entry.segment.x1"
+            [attr.y1]="entry.segment.y1" [attr.x2]="entry.segment.x2"
+            [attr.y2]="entry.segment.y2" [attr.stroke-width]="unit() * 14"
+            role="button" tabindex="0" aria-label="Puerta"
+            (pointerdown)="geometryDown($event, 'door', entry.door.id)" (pointerup)="geometryUp($event)"
+            (click)="$event.stopPropagation(); doorPicked.emit(entry.door.id)"
+            (keydown.enter)="doorPicked.emit(entry.door.id)" />
+      }
+    </g>
     @for (line of lines(); track line.connection.id) {
       <line class="edge" [class.selected]="isSelected('connection', line.connection.id)"
         [class.one-way]="!line.connection.bidirectional"
