@@ -1,5 +1,3 @@
-.breadcrumbs { display: flex; gap: 8px; color: var(--muted); font-size: .82rem; margin-bottom: 12px; }
-.breadcrumbs a { color: var(--primary); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--panel-radius); padding: 20px; }
 .location, .version, .measurement { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
 .location > label, .version > label { flex: 1 1 230px; }

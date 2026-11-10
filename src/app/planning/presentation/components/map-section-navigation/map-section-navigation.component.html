@@ -1,0 +1,27 @@
+<div class="location-row">
+  <nav class="location-path" aria-label="Ubicación actual">
+    <a routerLink="/planning/maps" [queryParams]="location()">Mapas</a>
+    @if (siteName()) {
+      <span aria-hidden="true">/</span><span>{{ siteName() }}</span>
+    }
+    @if (floorName()) {
+      <span aria-hidden="true">/</span><strong>{{ floorName() }}</strong>
+    }
+  </nav>
+  <select aria-label="Seleccionar piso" [value]="floorId() ?? ''" [disabled]="floorDisabled() || floors().length === 0"
+    (change)="floorSelected.emit($any($event.target).value)">
+    <option value="">Piso: Selecciona un piso</option>
+    @for (floor of floors(); track floor.id) {
+      <option [value]="floor.id">Piso: {{ floor.name }}</option>
+    }
+  </select>
+</div>
+<nav class="map-workflow-tabs" aria-label="Secciones del mapa">
+  <a routerLink="/planning/maps" [queryParams]="location()"
+    [class.active]="active() === 'plan'" [attr.aria-current]="active() === 'plan' ? 'page' : null">Plano</a>
+  <a routerLink="/planning/map-editor" [queryParams]="location()"
+    [class.active]="active() === 'editor'" [attr.aria-current]="active() === 'editor' ? 'page' : null">Editor de mapa</a>
+  <a routerLink="/planning/interfloor-connections" [queryParams]="location()"
+    [class.active]="active() === 'connections'" [attr.aria-current]="active() === 'connections' ? 'page' : null">Conexiones entre pisos</a>
+  <span class="future-step" title="Disponible al validar el modelo">Validar y publicar</span>
+</nav>

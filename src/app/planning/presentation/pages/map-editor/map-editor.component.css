@@ -1,8 +1,6 @@
 :host { display: block; }
 h2 { font-size: 1.06rem; margin: 0 0 8px; }
 p { margin: 6px 0 10px; overflow-wrap: anywhere; }
-.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; font-size: .8rem; color: var(--muted); }
-.breadcrumb a { color: var(--primary-hover); text-underline-offset: 3px; }
 .card { min-width: 0; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--panel-radius); }
 .selectors { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
 .selectors label { display: grid; gap: 4px; min-width: 180px; font-size: .78rem; font-weight: 600; }

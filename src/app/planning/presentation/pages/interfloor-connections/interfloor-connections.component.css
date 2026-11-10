@@ -1,6 +1,4 @@
-.crumb, .hint, .diagram p, small { color: var(--muted); font-size: .82rem; }
-.crumb { margin-bottom: 12px; }
-.crumb a { color: var(--primary); }
+.hint, .diagram p, small { color: var(--muted); font-size: .82rem; }
 .heading, .selector, .dialog-heading, footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .selector { justify-content: flex-start; align-items: end; margin-bottom: 14px; }
 .selector label { min-width: min(240px, 100%); }

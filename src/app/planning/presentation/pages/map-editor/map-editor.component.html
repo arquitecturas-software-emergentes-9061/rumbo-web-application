@@ -1,21 +1,7 @@
 <app-admin-shell [context]="site()?.name ?? null">
-  <header class="page-heading">
-    <nav class="breadcrumb" aria-label="Ubicación actual">
-      <a routerLink="/planning/maps">Mapas</a>
-      <span aria-hidden="true">›</span>
-      <span>{{ site()?.name ?? 'Sede' }}</span>
-      <span aria-hidden="true">›</span>
-      <span aria-current="page">{{ floor()?.name ?? 'Piso' }}</span>
-    </nav>
-    <h1>Editor de mapa</h1>
-  </header>
-
-  <nav class="workflow-tabs" aria-label="Secciones del mapa">
-    <a routerLink="/planning/maps">Plano</a>
-    <span class="active" aria-current="page">Editor de mapa</span>
-    <a routerLink="/planning/interfloor-connections">Conexiones entre pisos</a>
-    <span class="future-step" title="Disponible al validar el modelo">Validar y publicar</span>
-  </nav>
+  <app-map-section-navigation active="editor" [siteName]="site()?.name ?? null" [siteId]="siteId()"
+    [floors]="floors()" [floorId]="floorId()" (floorSelected)="selectFloor($event)" />
+  <h1 class="editor-title">Editor de mapa</h1>
 
   @if (error(); as message) {
     <p class="alert" role="alert">{{ message }}</p>
@@ -40,11 +26,6 @@
           </select>
         </label>
       }
-      <label>Piso
-        <select [value]="floorId() ?? ''" [disabled]="floors().length === 0" (change)="selectFloor($any($event.target).value)">
-          @for (item of floors(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
-        </select>
-      </label>
       <label>Plano
         <select [value]="versionId() ?? ''" [disabled]="versions().length === 0" (change)="selectVersion($any($event.target).value)">
           @for (item of versions(); track item.id) {

@@ -1,7 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Floor, Site } from '../../../domain/model/site-floor.model';
 import { SITES_PORT } from '../../../application/planning.ports';
@@ -9,6 +9,7 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
 import { Accessibility, DraftSnapshot, VerticalType } from '../../../application/draft-graph.contracts';
 import { GraphConnection, GraphNode } from '../../../domain/model/map-graph.types';
 import { DRAFT_GRAPH_PORT } from '../../../application/planning.ports';
+import { MapSectionNavigationComponent } from '../../components/map-section-navigation/map-section-navigation.component';
 
 const typeLabels: Record<VerticalType, string> = { ELEVATOR: 'Ascensor', STAIRS: 'Escalera', RAMP: 'Rampa' };
 const accessLabels: Record<Accessibility, string> = {
@@ -17,18 +18,21 @@ const accessLabels: Record<Accessibility, string> = {
 
 @Component({
   selector: 'app-interfloor-connections',
-  imports: [AdminShellComponent, RouterLink, DecimalPipe],
+  imports: [AdminShellComponent, MapSectionNavigationComponent, DecimalPipe],
   templateUrl: './interfloor-connections.component.html',
   styleUrl: './interfloor-connections.component.css',
 })
 export class InterfloorConnectionsComponent {
   private readonly sitesApi = inject(SITES_PORT);
   private readonly graphs = inject(DRAFT_GRAPH_PORT);
+  private readonly route = inject(ActivatedRoute);
+  private initialFloorId = this.route.snapshot.queryParamMap.get('floorId');
   private request = 0;
   private dialog: HTMLDialogElement | null = null;
 
   protected readonly sites = signal<Site[]>([]);
   protected readonly siteId = signal('');
+  protected readonly navigationFloorId = signal('');
   protected readonly floors = signal<Floor[]>([]);
   protected readonly snapshot = signal<DraftSnapshot | null>(null);
   protected readonly loading = signal(false);
@@ -89,7 +93,13 @@ export class InterfloorConnectionsComponent {
     this.error.set('');
     try {
       const sites = await firstValueFrom(this.sitesApi.loadSites());
-      if (request === this.request) this.sites.set(sites);
+      if (request === this.request) {
+        this.sites.set(sites);
+        const initialSiteId = this.route.snapshot.queryParamMap.get('siteId');
+        const selectedSite = sites.find(site => site.id === this.siteId())
+          ?? sites.find(site => site.id === initialSiteId) ?? sites[0];
+        if (selectedSite) void this.loadSite(selectedSite.id);
+      }
     } catch {
       if (request === this.request) this.error.set('No se pudieron cargar las sedes.');
     } finally {
@@ -99,7 +109,10 @@ export class InterfloorConnectionsComponent {
 
   protected async loadSite(siteId: string) {
     const request = ++this.request;
+    const preferredFloorId = this.navigationFloorId() || this.initialFloorId;
+    this.initialFloorId = null;
     this.siteId.set(siteId);
+    this.navigationFloorId.set('');
     this.snapshot.set(null);
     this.floors.set([]);
     this.noDraft.set(false);
@@ -109,13 +122,17 @@ export class InterfloorConnectionsComponent {
     this.loading.set(!!siteId);
     if (!siteId) return;
     try {
-      const [floors, draft] = await Promise.all([
+      const [floorsResult, draftResult] = await Promise.allSettled([
         firstValueFrom(this.sitesApi.loadFloors(siteId)),
         firstValueFrom(this.graphs.load(siteId)),
       ]);
       if (request !== this.request) return;
+      if (floorsResult.status === 'rejected') throw floorsResult.reason;
+      const floors = floorsResult.value;
       this.floors.set(floors);
-      this.snapshot.set(draft);
+      this.navigationFloorId.set(floors.find(floor => floor.id === preferredFloorId)?.id ?? floors[0]?.id ?? '');
+      if (draftResult.status === 'rejected') throw draftResult.reason;
+      this.snapshot.set(draftResult.value);
     } catch (error) {
       if (request !== this.request) return;
       if (error instanceof HttpErrorResponse && error.status === 404) this.noDraft.set(true);
