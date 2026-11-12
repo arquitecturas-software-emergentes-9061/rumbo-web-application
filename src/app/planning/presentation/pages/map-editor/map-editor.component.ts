@@ -17,7 +17,8 @@ import { proposalWithGraph, unresolvedProposalConnections,
   unadoptedProposalGeometry } from '../../../application/proposal-graph';
 import { GenerateModelUseCase } from '../../../application/generate-model.use-case';
 import {
-  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor
+  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor,
+  reconcileDestinations
 } from '../../../domain/model/graph-model';
 import { GraphAlert, countErrors } from '../../../domain/model/graph-validation';
 import { crossingConflictDetails, crossingConflicts, doorSegment, proposalGeometry } from '../../../domain/model/map-geometry';
@@ -510,6 +511,20 @@ export class MapEditorComponent implements OnInit {
       return;
     }
     if (!this.draft()) { this.createDraft(() => this.applyProposal()); return; }
+    const currentPlan = this.editor.plan(), proposedPlan = this.previewEditor.plan();
+    const savedDestinations = this.editor.graph().destinations.filter(entry =>
+      this.editor.graph().nodes.some(node => node.id === entry.nodeId && node.floorId === currentPlan?.floorId));
+    if (savedDestinations.length && currentPlan && proposedPlan && currentPlan.planVersionId !== proposedPlan.planVersionId) {
+      this.notice.set('El borrador corresponde a otra versión del plano. Revisa la versión asociada antes de regenerar para conservar los destinos.');
+      return;
+    }
+    const reconciliation = currentPlan ? reconcileDestinations(this.editor.graph(), current, currentPlan) : null;
+    if (reconciliation?.ambiguous.length) {
+      this.notice.set('Hay ambientes o destinos con nombres repetidos. Corrige sus nombres en la propuesta antes de aplicarla para evitar asignaciones ambiguas.');
+      this.tab.set('alerts');
+      return;
+    }
+    const unresolved = reconciliation?.unresolved ?? [];
     if (!this.editor.applyGenerated(current, this.previewEditor.graph())) {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;
@@ -523,6 +538,7 @@ export class MapEditorComponent implements OnInit {
     this.resetPreview();
     this.tab.set('properties');
     this.success.set('Propuesta aplicada al borrador. Revísala y guarda los cambios.');
+    if (unresolved.length) this.notice.set(`${unresolved.length} destino(s) existente(s) no coincidieron de forma única con los ambientes nuevos. Conservan su nombre y referencia; revisa sus conexiones antes de guardar.`);
   }
 
   discardProposal(): void { this.resetPreview(); this.tab.set('properties'); }

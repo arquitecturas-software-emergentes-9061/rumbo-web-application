@@ -142,36 +142,57 @@ export function nodeTypeFor(zone: ModelProposal['zones'][number] | undefined): N
   return 'INTERSECTION';
 }
 
+/** Match only a unique, readable room label to a unique saved directory name on this floor. */
+export function reconcileDestinations(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds) {
+  const key = (name: string) => name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .trim().replace(/\s+/g, ' ').toLocaleLowerCase('es');
+  const nodes = new Map(graph.nodes.map(node => [node.id, node]));
+  const existing = graph.destinations.filter(entry => nodes.get(entry.nodeId)?.floorId === plan.floorId);
+  const candidates = proposal.zones.filter(zone => nodeTypeFor(zone) === 'DESTINATION'
+    && proposal.nodes.some(node => node.id === zone.id && (node.role == null || node.role === 'ROOM' || node.role === 'DESTINATION')));
+  const byName = new Map<string, typeof candidates>();
+  for (const zone of candidates) byName.set(key(zone.name), [...(byName.get(key(zone.name)) ?? []), zone]);
+  const savedByName = new Map<string, typeof existing>();
+  for (const entry of existing) savedByName.set(key(entry.name), [...(savedByName.get(key(entry.name)) ?? []), entry]);
+  const matches = new Map<string, string>();
+  const unresolved: typeof existing = [];
+  const ambiguous: typeof existing = [];
+  for (const entry of existing) {
+    const saved = savedByName.get(key(entry.name)) ?? [];
+    const proposed = byName.get(key(entry.name)) ?? [];
+    if (saved.length === 1 && proposed.length === 1) matches.set(proposed[0].id, entry.nodeId);
+    else {
+      unresolved.push(entry);
+      if (saved.length > 1 || proposed.length > 1) ambiguous.push(entry);
+    }
+  }
+  return { matches, unresolved, ambiguous };
+}
+
 /**
- * Replaces the generated part of one floor with the proposal while keeping its destinations: every
- * DESTINATION node and its directory entry survive, and a proposal node that lands next to one reuses
- * it instead of creating a duplicate. Other nodes of the floor are replaced. Kept destinations that no
- * proposal link reaches stay unconnected so validation flags them for review. The caller must have
- * checked that the scale is confirmed, because distances are measured in meters.
+ * Replaces generated geometry on one floor. A unique room/name match retains the saved destination
+ * and moves its node to the new plan. Unmatched destinations remain for explicit editor review.
  */
 export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds,
                               newId: IdFactory = randomId): EditorGraph {
   const floorNodes = graph.nodes.filter(node => node.floorId === plan.floorId);
-  const destinationNodes = floorNodes.filter(node => node.type === 'DESTINATION');
+  const reconciliation = reconcileDestinations(graph, proposal, plan);
   const removed = new Set(floorNodes.filter(node => node.type !== 'DESTINATION').map(node => node.id));
+  const moved = new Set(reconciliation.matches.values());
   const kept: EditorGraph = {
     nodes: graph.nodes.filter(node => !removed.has(node.id)),
-    connections: graph.connections.filter(item => !removed.has(item.sourceNodeId) && !removed.has(item.targetNodeId)),
+    connections: graph.connections.filter(item => !removed.has(item.sourceNodeId) && !removed.has(item.targetNodeId)
+      && !moved.has(item.sourceNodeId) && !moved.has(item.targetNodeId)),
     destinations: graph.destinations.filter(entry => !removed.has(entry.nodeId))
   };
-  const snap = Math.max(plan.widthUnits, plan.heightUnits) * 0.02;
   const ids = new Map<string, string>();
   const created: GraphNode[] = [];
   const destinations = [...kept.destinations];
   const zoneById = new Map(proposal.zones.map(zone => [zone.id, zone]));
   for (const node of proposal.nodes) {
     const point = clampPoint(plan, node.x, node.y);
-    // Structural roles distinguish an entrance/door from a destination at nearby coordinates.
-    // Preserve exact generated route geometry; proximity-only reconciliation is legacy behavior.
-    const near = destinationNodes.find(existing => node.role == null
-      ? Math.hypot(existing.x - point.x, existing.y - point.y) <= snap
-      : node.role === 'ROOM' && Math.hypot(existing.x - point.x, existing.y - point.y) <= 1e-6);
-    if (near) { ids.set(node.id, near.id); continue; }
+    const matched = reconciliation.matches.get(node.id);
+    if (matched) { ids.set(node.id, matched); continue; }
     const id = newId();
     const zone = zoneById.get(node.id);
     const type = node.role === 'ENTRANCE' || node.role === 'ACCESS' ? 'ACCESS'
@@ -184,7 +205,10 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
       destinations.push({ id: newId(), nodeId: id, type: 'SERVICE', name: zone?.name ?? node.label, specialty: null });
     }
   }
-  const all = [...kept.nodes, ...created];
+  const all = [...kept.nodes.map(node => {
+    const candidate = proposal.nodes.find(item => reconciliation.matches.get(item.id) === node.id);
+    return candidate ? { ...node, planVersionId: plan.planVersionId, ...clampPoint(plan, candidate.x, candidate.y) } : node;
+  }), ...created];
   const byId = new Map(all.map(node => [node.id, node]));
   const connections = [...kept.connections];
   const linked = new Set(connections.map(item => [item.sourceNodeId, item.targetNodeId].sort().join('|')));
