@@ -1,7 +1,7 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { SITES_PORT } from '../../../application/planning.ports';
 import { Floor, Site } from '../../../domain/model/site-floor.model';
@@ -10,6 +10,7 @@ import { Calibration, PlanInterpretation, PlanVersion } from '../../../applicati
 import { Point } from '../../../domain/model/plan-interpretation';
 import { FLOOR_PLANS_PORT } from '../../../application/planning.ports';
 import { renderPdfPreview } from './plan-preview';
+import { MapSectionNavigationComponent } from '../../components/map-section-navigation/map-section-navigation.component';
 
 interface Preview {
   url: string;
@@ -31,13 +32,15 @@ const messages: Record<string, string> = {
 
 @Component({
   selector: 'app-floor-plan-calibration',
-  imports: [AdminShellComponent, RouterLink, DatePipe, DecimalPipe],
+  imports: [AdminShellComponent, MapSectionNavigationComponent, DatePipe, DecimalPipe],
   templateUrl: './floor-plan-calibration.component.html',
   styleUrl: './floor-plan-calibration.component.css',
 })
 export class FloorPlanCalibrationComponent {
   private readonly sitesApi = inject(SITES_PORT);
   private readonly plans = inject(FLOOR_PLANS_PORT);
+  private readonly route = inject(ActivatedRoute);
+  private initialFloorId = this.route.snapshot.queryParamMap.get('floorId');
   private revision = 0;
 
   protected readonly sites = signal<Site[]>([]);
@@ -83,7 +86,16 @@ export class FloorPlanCalibrationComponent {
     this.error.set('');
     try {
       const sites = await firstValueFrom(this.sitesApi.loadSites());
-      if (revision === this.revision) this.sites.set(sites);
+      if (revision === this.revision) {
+        this.sites.set(sites);
+        const initialSiteId = this.route.snapshot.queryParamMap.get('siteId');
+        const selectedSite = sites.find(site => site.id === this.siteId())
+          ?? sites.find(site => site.id === initialSiteId) ?? sites[0];
+        if (selectedSite) {
+          this.initialFloorId ??= this.floorId() || null;
+          void this.chooseSite(selectedSite.id);
+        }
+      }
     } catch (error) {
       this.showError(revision, error, 'No pudimos cargar las sedes. Intenta de nuevo.');
     } finally {
@@ -99,7 +111,13 @@ export class FloorPlanCalibrationComponent {
     this.pending.set('Cargando pisos…');
     try {
       const floors = await firstValueFrom(this.sitesApi.loadFloors(siteId));
-      if (revision === this.revision) this.floors.set(floors);
+      if (revision === this.revision) {
+        this.floors.set(floors);
+        const initialFloorId = this.initialFloorId;
+        this.initialFloorId = null;
+        const selectedFloor = floors.find(floor => floor.id === initialFloorId) ?? floors[0];
+        if (selectedFloor) void this.chooseFloor(selectedFloor.id);
+      }
     } catch (error) {
       this.showError(revision, error, 'No pudimos cargar los pisos de la sede.');
     } finally {

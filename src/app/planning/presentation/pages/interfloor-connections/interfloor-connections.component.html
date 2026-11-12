@@ -1,5 +1,7 @@
 <app-admin-shell [context]="siteName()">
-  <nav class="crumb" aria-label="Ruta"><a routerLink="/admin">Panel</a> › Mapas › Conexiones entre pisos</nav>
+  <app-map-section-navigation active="connections" [siteName]="siteName()" [siteId]="siteId()"
+    [floors]="floors()" [floorId]="navigationFloorId()" [floorDisabled]="saving()"
+    (floorSelected)="navigationFloorId.set($event)" />
   <header class="page-heading heading">
     <div><h1>Conexiones entre pisos</h1><p>Configura ascensores, escaleras y rampas del borrador de la sede.</p></div>
     <button class="primary" type="button" (click)="open(panel, null)" [disabled]="floorIds().length < 2 || stale() || loading()">

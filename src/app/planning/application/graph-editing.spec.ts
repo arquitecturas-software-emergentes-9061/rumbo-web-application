@@ -1,5 +1,5 @@
 import {
-  nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, reconcileDestinations, removeConnection,
+  nodeRemovalImpact, nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, reconcileDestinations, removeConnection,
   removeNode, updateConnection, updateNodeType, upsertDestination
 } from '../domain/model/graph-model';
 import { countErrors, fromServerIssues, validateGraph } from '../domain/model/graph-validation';
@@ -48,6 +48,24 @@ describe('graph editing operations', () => {
     expect(graph.nodes.map(node => node.id)).toEqual(['a', 'b']);
     expect(graph.connections.map(item => item.id)).toEqual(['ab']);
     expect(graph.destinations).toEqual([]);
+  });
+
+  it('removing a node preserves walls, doors and unrelated graph elements', () => {
+    let unrelated = addNode(build(), other, 0, 0, 'ACCESS', 'd');
+    unrelated = addNode(unrelated, other, 10, 0, 'INTERSECTION', 'e');
+    unrelated = addConnection(unrelated, 'd', 'e', [plan, other], 'de').graph;
+    const wall = { id: 'wall', floorId: 'f1', planVersionId: 'p1', x1: 50, y1: 0, x2: 50, y2: 60 };
+    const door = { id: 'door', wallId: 'wall', from: .4, to: .6 };
+    const graph: EditorGraph = { ...unrelated, walls: [wall], doors: [door] };
+
+    expect(nodeRemovalImpact(graph, 'b').connections.map(link => link.id)).toEqual(['ab', 'bc']);
+    expect(nodeRemovalImpact(graph, 'c')).toMatchObject({ destinations: [{ name: 'Caja' }], connections: [{ id: 'bc' }] });
+    const removed = removeNode(graph, 'b');
+    expect(removed.nodes.map(node => node.id)).toEqual(['a', 'c', 'd', 'e']);
+    expect(removed.connections.map(link => link.id)).toEqual(['de']);
+    expect(removed.destinations).toEqual(graph.destinations);
+    expect(removed.walls).toEqual([wall]);
+    expect(removed.doors).toEqual([door]);
   });
 
   it('changing a destination node to another type drops its directory entry', () => {
