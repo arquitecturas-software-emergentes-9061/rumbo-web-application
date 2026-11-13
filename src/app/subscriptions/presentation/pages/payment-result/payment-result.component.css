@@ -1,0 +1,11 @@
+.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; font-size: .8rem; color: var(--muted); }
+.breadcrumb a { color: var(--primary-hover); text-underline-offset: 3px; }
+.price { color: var(--primary); font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.alert { padding: 10px 12px; color: var(--warning); background: var(--warning-bg); border: 1px solid var(--line); border-radius: var(--control-radius); font-size: .875rem; }
+.outline { min-height: 40px; padding: 8px 10px; font: inherit; font-size: .875rem; color: inherit; background: transparent; border: 1px solid var(--control-line); border-radius: var(--control-radius); cursor: pointer; }
+.outline:hover:not(:disabled) { background: var(--primary-soft); }
+.primary-action { min-height: 40px; margin-right: 8px; padding: 8px 14px; font: inherit; font-weight: 650; color: white; background: var(--primary-action); border: 1px solid transparent; border-radius: var(--control-radius); cursor: pointer; }
+.primary-action:hover:not(:disabled) { background: var(--primary-hover); }
+.result { padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--panel-radius); overflow-wrap: anywhere; }
+.success { padding: 12px; color: var(--success); background: var(--success-bg); border-radius: var(--control-radius); }
+.primary-action { display: inline-block; text-decoration: none; }

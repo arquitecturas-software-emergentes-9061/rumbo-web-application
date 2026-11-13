@@ -1,0 +1,42 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a><span aria-hidden="true">›</span>
+      <a routerLink="/subscriptions/plans">Planes</a><span aria-hidden="true">›</span>
+      <span aria-current="page">Resultado del pago</span>
+    </nav>
+    <h1>Resultado del pago</h1>
+  </header>
+  <section class="result">
+    @if (notFound()) {
+      <p class="alert" role="alert">No encontramos la orden de pago.</p>
+    } @else {
+      @if (error()) {
+        <p class="alert" role="alert">{{ error() }}</p>
+        <button type="button" class="outline" (click)="retry()">Reintentar</button>
+      }
+      @if (cancelled() || order()?.status === 'CANCELLED') {
+        <p role="status">Pago cancelado. No se realizó ningún cargo.</p>
+      } @else if (!error()) {
+        @if (order()?.status === 'PAID') {
+          <p class="success" role="status">Pago confirmado. Tu plan {{ planName() }} está activo.</p>
+          <a class="primary-action" routerLink="/admin">Ir al panel</a>
+        } @else if (order()?.status === 'FAILED' || order()?.status === 'EXPIRED') {
+          <p class="alert" role="alert">El pago no se completó.</p>
+        } @else if (exhausted()) {
+          <p role="status">Tu pago aún se está confirmando. Revisa el estado más tarde.</p>
+          <button type="button" class="outline" (click)="retry()">Volver a consultar</button>
+        } @else {
+          <p role="status">Estamos confirmando tu pago…</p>
+        }
+      }
+      @if (order(); as payment) {
+        <p>Plan: {{ planName() }}</p>
+        <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
+      }
+    }
+    @if (notFound() || cancelled() || order()?.status !== 'PAID' || error()) {
+      <a routerLink="/subscriptions/plans">Volver a planes</a>
+    }
+  </section>
+</app-admin-shell>

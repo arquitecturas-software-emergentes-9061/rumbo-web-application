@@ -24,4 +24,9 @@ describe('SubscriptionsService HTTP contract', () => {
     service.loadPlans().subscribe(result => expect(result).toEqual(plans));
     http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/plans' }).flush(plans);
   });
+  it('gets a payment order using an encoded identifier', () => {
+    service.getPaymentOrder('order/with space').subscribe();
+    http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/payment-orders/order%2Fwith%20space' }).flush({});
+  });
+
 });
