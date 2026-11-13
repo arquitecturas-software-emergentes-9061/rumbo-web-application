@@ -78,16 +78,23 @@ describe('PaymentResultComponent', () => {
     start(); respond('PAID'); activate();
     expect(element.querySelector('.success[role="status"]')?.textContent).toContain('Pago confirmado. Tu plan Básico está activo.');
     expect(element.textContent).toContain('S/ 39.90');
-    expect(element.textContent).toContain('Datos de la orden');
-    expect(element.textContent).toContain('Rumbo');
+    expect(element.textContent).toContain('Datos de la transacción');
+    expect(element.textContent).toContain('59.90 PEN');
+    expect(element.textContent).toContain('Total cobrado');
+    expect(element.textContent).toContain('PAGADO');
+    expect(element.textContent).toContain('Pago / Pedido #12345678');
+    expect(element.textContent).toContain('Pago completado');
+    expect(element.querySelector('.activation-confirmed')?.textContent).toContain('Suscripción activada — Vigente hasta 12/12/2026');
     expect(element.textContent).toContain(id);
     expect(element.textContent).toContain('12/11/2026');
     expect(element.textContent).toContain('Del 12/11/2026 al 12/12/2026');
     expect(element.textContent).toContain('Quedan 30 días');
     const link = (text: string) => Array.from(element.querySelectorAll('a'))
       .find(item => item.textContent?.trim() === text);
-    expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
+    expect(link('Ir al Panel →')?.getAttribute('href')).toBe('/admin');
     expect(link('Ver mi suscripción')?.getAttribute('href')).toBe('/subscriptions/me');
+    expect(link('Registrar sedes →')?.getAttribute('href')).toBe('/planning/sites');
+    expect(element.querySelectorAll('.next-step').length).toBe(1);
   });
   it('shows paid billing details from the order', () => {
     start();
@@ -98,10 +105,36 @@ describe('PaymentResultComponent', () => {
     fixture.detectChanges();
     activate();
     const billing = element.querySelector('[aria-labelledby=billing-summary-title]')?.textContent;
+    expect(billing).toContain('CLIENTE');
     for (const value of ['Clínica Ejemplo', '20491823901', 'Av. Lima 123', 'pagos@example.test', 'PO-123']) {
       expect(billing).toContain(value);
     }
-    expect(element.textContent).toContain('Fecha de pago: 12/11/2026');
+    const transaction = element.querySelector('.transaction')?.textContent;
+    for (const value of [id, 'Fecha de pago', '12/11/2026', 'Básico', '59.90 PEN', '20491823901']) {
+      expect(transaction).toContain(value);
+    }
+    expect(element.textContent).toContain('El comprobante electrónico estará disponible cuando se habilite su emisión.');
+    for (const text of ['PDF', 'EMITIDO', 'Se envió una copia', 'Medio de pago', 'Tarjeta']) {
+      expect(element.textContent).not.toContain(text);
+    }
+  });
+  it('labels the creation date when paidAt is null', () => {
+    start();
+    http.expectOne(url).flush({ ...order, paidAt: null, createdAt: '2026-11-10T12:00:00Z' });
+    activate();
+    const transaction = element.querySelector('.transaction')?.textContent;
+    expect(transaction).toContain('Fecha de la orden');
+    expect(transaction).toContain('10/11/2026');
+    expect(transaction).not.toContain('Fecha de pago');
+  });
+  it('does not show active copy or a green activation box while confirmation is pending', () => {
+    start(); respond('PAID');
+    expect(element.textContent).not.toContain('está activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
+    expect(element.querySelector('.success')).toBeNull();
+    expect(element.textContent).not.toContain('PDF');
+    expect(element.textContent).not.toContain('EMITIDO');
+    activate();
   });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
@@ -141,6 +174,7 @@ describe('PaymentResultComponent', () => {
     expect(element.querySelector('.retry-payment')?.textContent).toBe('Reintentar pago · S/ 59.90');
     expect(element.querySelector('.retry-payment')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
     http.expectNone(meUrl);
     vi.advanceTimersByTime(10000);
     http.expectNone(url);
@@ -191,6 +225,7 @@ describe('PaymentResultComponent', () => {
     start(); respond('PAID'); activate(subscription);
     expect(element.textContent).toContain('Estamos activando tu plan.');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
   });
   it('exhausts five activation attempts and retries only the subscription by button text', () => {
     start(); respond('PAID');
@@ -201,6 +236,7 @@ describe('PaymentResultComponent', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('La activación está tardando. Revisa Mi suscripción más tarde.');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
     vi.advanceTimersByTime(10000); http.expectNone(meUrl);
     button('Volver a consultar').click();
     http.expectNone(url); activate({ ...active, daysRemaining: 1 });
@@ -212,6 +248,7 @@ describe('PaymentResultComponent', () => {
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('No se pudo confirmar la activación');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
     vi.advanceTimersByTime(10000); http.expectNone(meUrl);
     button('Reintentar').click(); activate();
     expect(element.textContent).toContain('Tu plan Básico está activo.');
@@ -219,7 +256,7 @@ describe('PaymentResultComponent', () => {
   it.each(['FAILED', 'EXPIRED', 'CANCELLED', 'PENDING'])('does not query subscriptions or show order details for %s', status => {
     start(); respond(status);
     http.expectNone(meUrl);
-    expect(element.textContent).not.toContain('Datos de la orden');
+    expect(element.textContent).not.toContain('Datos de la transacción');
     expect(element.textContent).not.toContain('está activo');
   });
   it.each(['destroy', 'parameters'])('cancels activation timers on %s', action => {

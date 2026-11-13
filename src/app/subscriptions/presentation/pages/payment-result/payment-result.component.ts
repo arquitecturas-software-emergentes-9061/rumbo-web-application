@@ -37,6 +37,7 @@ export class PaymentResultComponent implements OnInit {
   readonly exhausted = signal(false);
   readonly error = signal<string | null>(null);
   readonly notFound = signal(false);
+  readonly selectedPlan = computed(() => this.plans().find(plan => plan.code === this.order()?.planCode));
   readonly planName = computed(() => this.plans().find(plan => plan.code === this.order()?.planCode)?.name
     ?? this.order()?.planCode ?? '');
   readonly retryPlan = computed(() => this.plans().find(plan => plan.code === this.order()?.planCode && plan.purchaseMode === 'CHECKOUT'));
