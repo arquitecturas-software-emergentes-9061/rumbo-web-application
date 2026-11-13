@@ -1,227 +1,139 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { provideRouter } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
 import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
 import { AUTH_PORT } from '../../../../iam/application/iam.ports';
-import { BROWSER_NAVIGATION, SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
+import { SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
 import { SubscriptionsService } from '../../../infrastructure/subscriptions.service';
 import { PlansComponent } from './plans.component';
 
 describe('PlansComponent', () => {
-  const clinicUrl = environment.apiUrl + '/clinics/me';
-  const clinic = { id: 'clinic-1', name: 'Clínica Rumbo', code: 'RUMBO', contactEmail: 'clinic@example.com', phone: null };
   const url = environment.apiUrl + '/subscriptions/plans';
+  const me = environment.apiUrl + '/subscriptions/me';
   const plans: SubscriptionPlan[] = [
-    { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT' },
-    { code: 'PROFESSIONAL', name: 'Profesional', price: { amount: 49.99, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT' },
-    { code: 'ENTERPRISE', name: 'Enterprise', price: { amount: 59.99, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CONTACT_SALES' }
+    { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT', quota: { sites: 1, floors: 3, beacons: 15 } },
+    { code: 'PROFESSIONAL', name: 'Profesional', price: { amount: 49.99, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT', quota: { sites: 3, floors: 10, beacons: 50 } },
+    { code: 'ENTERPRISE', name: 'Enterprise', price: { amount: 59.99, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CONTACT_SALES', quota: { sites: null, floors: null, beacons: null } }
   ];
   let fixture: ComponentFixture<PlansComponent>;
   let http: HttpTestingController;
   let element: HTMLElement;
-  let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
-  const assign = vi.fn();
-  let navigate: ReturnType<typeof vi.spyOn>;
+  let authenticated: boolean;
 
   beforeEach(() => {
-    assign.mockReset();
-    queryParams = new BehaviorSubject(convertToParamMap({}));
+    authenticated = true;
     TestBed.configureTestingModule({
       imports: [PlansComponent],
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([]),
-        { provide: ActivatedRoute, useValue: {
-          queryParamMap: queryParams.asObservable(),
-          snapshot: { get queryParamMap() { return queryParams.value; } }
-        } },
-        { provide: AUTH_PORT, useValue: {} },
-        { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService },
-        { provide: BROWSER_NAVIGATION, useValue: { assign } }]
+        { provide: AUTH_PORT, useValue: { isAuthenticated: () => authenticated } },
+        { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService }]
     });
-    navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(PlansComponent);
     element = fixture.nativeElement;
-    fixture.detectChanges();
   });
   afterEach(() => http.verify());
 
-  it('shows an accessible loading state until the response arrives', () => {
-    expect(element.querySelector('[role="status"]')?.textContent).toBe('Cargando planes…');
-    expect(element.querySelector('.plans-grid')).toBeNull();
-    http.expectOne(url).flush(plans);
+  function load(code = 'PROFESSIONAL', status = 'ACTIVE', used = { sites: 1, floors: 3, beacons: 15 }, catalog = plans): void {
     fixture.detectChanges();
-    expect(element.querySelector('[role="status"]')).toBeNull();
-  });
-
-  it('shows plans in API order with two decimal prices and informative sales text', () => {
-    http.expectOne(url).flush(plans);
-    fixture.detectChanges();
-    const cards = Array.from(element.querySelectorAll('.card'));
-    expect(cards.map(card => card.querySelector('h2')?.textContent)).toEqual(['Básico', 'Profesional', 'Enterprise']);
-    expect(cards.map(card => card.querySelector('.price')?.textContent)).toEqual(['S/ 39.90', 'S/ 49.99', 'S/ 59.99']);
-    expect(cards.every(card => card.querySelector('.interval')?.textContent === 'por mes')).toBe(true);
-    expect(cards[2].querySelector('.contact-sales')?.textContent).toBe('Contactar ventas');
-    expect(cards[2].querySelector('button')).toBeNull();
-    expect(element.querySelectorAll('.plans-grid button')).toHaveLength(2);
-  });
-
-  it('selects BASIC, announces its summary and merges the URL query', () => {
-    http.expectOne(url).flush(plans);
-    fixture.detectChanges();
-    buttonByText('Elegir plan').click();
-    http.expectOne(clinicUrl).flush(clinic);
-    fixture.detectChanges();
-    const summary = element.querySelector('.subscription-summary');
-    expect(summary?.getAttribute('role')).toBe('status');
-    expect(summary?.getAttribute('aria-labelledby')).toBe('subscription-summary-title');
-    for (const text of ['Básico', 'S/ 39.90', 'Facturación mensual', 'Soles (PEN)',
-      'El pago se realiza en una página segura de Stripe. Podrás revisar el resultado al volver.']) {
-      expect(summary?.textContent).toContain(text);
-    }
-    expect(element.querySelector('.card.selected h2')?.textContent).toBe('Básico');
-    expect(element.querySelector('.plans-grid button')?.getAttribute('aria-pressed')).toBe('true');
-    expect(navigate).toHaveBeenCalledWith([], {
-      relativeTo: TestBed.inject(ActivatedRoute), queryParams: { plan: 'BASIC' },
-      queryParamsHandling: 'merge', replaceUrl: true
+    http.expectOne(url).flush(catalog);
+    http.expectOne(me).flush({
+      status, plan: plans.find(plan => plan.code === code),
+      usage: Object.fromEntries(Object.entries(used).map(([key, value]) => [key, { used: value, limit: null }])),
+      currentPeriodStart: '2026-11-12', currentPeriodEnd: '2026-12-12', daysRemaining: 30
     });
-    Array.from(summary!.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cambiar plan')!.click();
     fixture.detectChanges();
-    expect(element.querySelector('.subscription-summary, .card.selected')).toBeNull();
-    expect(navigate).toHaveBeenLastCalledWith([], {
-      relativeTo: TestBed.inject(ActivatedRoute), queryParams: { plan: null },
-      queryParamsHandling: 'merge', replaceUrl: true
-    });
-  });
+  }
+  const link = (text: string) => Array.from(element.querySelectorAll('a')).find(item => item.textContent?.trim() === text);
+  const button = (text: string) => Array.from(element.querySelectorAll('button')).find(item => item.textContent?.trim() === text);
 
-  it.each(['PROFESSIONAL', 'ENTERPRISE', 'XYZ', ''])('restores only a checkout plan from initial query %s', code => {
-    queryParams.next(convertToParamMap({ plan: code }));
+  it('disables the active plan and permits a downgrade at the quota boundary', () => {
+    load();
+    expect(button('Plan actual')?.disabled).toBe(true);
+    expect(link('Cambiar a Básico')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC');
+    expect(element.textContent).not.toContain('Tu consumo supera');
+  });
+  it('offers renewal for the expired plan', () => {
+    load('PROFESSIONAL', 'EXPIRED');
+    expect(link('Renovar plan Profesional')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=PROFESSIONAL');
+  });
+  it('offers an upgrade', () => {
+    load('BASIC');
+    expect(link('Mejorar plan')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=PROFESSIONAL');
+  });
+  it.each(['sites', 'floors', 'beacons'] as const)('blocks a downgrade when %s exceeds its quota even when expired', key => {
+    load('PROFESSIONAL', 'EXPIRED', { sites: 1, floors: 3, beacons: 15, [key]: plans[0].quota[key]! + 1 });
+    const action = button('Cambiar a Básico');
+    expect(action?.disabled).toBe(true);
+    expect(element.querySelector('#' + action?.getAttribute('aria-describedby'))?.textContent)
+      .toBe('Tu consumo supera los límites de este plan');
+    expect(link('Cambiar a Básico')).toBeUndefined();
+  });
+  it('uses catalog order rather than plan codes or prices', () => {
+    load('BASIC', 'ACTIVE', { sites: 0, floors: 0, beacons: 0 }, [plans[1], plans[0], plans[2]]);
+    expect(link('Cambiar a Profesional')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=PROFESSIONAL');
+  });
+  it('renders catalog prices, limits, unlimited text and sales contact', () => {
+    load();
+    expect(Array.from(element.querySelectorAll('.price')).map(item => item.textContent))
+      .toEqual(['S/ 39.90', 'S/ 49.99', 'S/ 59.99']);
+    for (const text of ['LÍMITES DEL PLAN', '1 sede · 3 pisos · 15 balizas',
+      '3 sedes · 10 pisos · 50 balizas', 'Sedes, pisos y balizas ilimitados', 'Contactar a ventas']) {
+      expect(element.textContent).toContain(text);
+    }
+    expect(element.querySelector('.contact-sales')?.textContent).toBe('Contactar a ventas');
+  });
+  it('renders returned quotas with singular, plural and mixed unlimited values', () => {
+    load('BASIC', 'ACTIVE', undefined, [
+      { ...plans[0], quota: { sites: 2, floors: 1, beacons: 1 }, price: { amount: 72, currency: 'USD' } },
+      { ...plans[1], quota: { sites: null, floors: 0, beacons: null } }, plans[2]
+    ]);
+    expect(element.textContent).toContain('2 sedes · 1 piso · 1 baliza');
+    expect(element.textContent).toContain('Sedes ilimitadas · 0 pisos · Balizas ilimitadas');
+    expect(element.textContent).toContain('USD 72.00');
+  });
+  it('shows plain purchase actions after /me returns 404', () => {
+    fixture.detectChanges();
+    http.expectOne(url).flush(plans);
+    http.expectOne(me).flush({}, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(Array.from(element.querySelectorAll('a')).filter(item => item.textContent?.trim() === 'Elegir plan')
+      .map(item => item.getAttribute('href'))).toEqual(['/subscriptions/checkout?plan=BASIC', '/subscriptions/checkout?plan=PROFESSIONAL']);
+  });
+  it('does not request /me without an administrator session', () => {
+    authenticated = false;
+    fixture.detectChanges();
+    http.expectOne(url).flush(plans);
+    http.expectNone(me);
+    fixture.detectChanges();
+    expect(link('Elegir plan')).toBeDefined();
+  });
+  it('shows loading until both requests finish and retries subscription failures', () => {
+    fixture.detectChanges();
     http.expectOne(url).flush(plans);
     fixture.detectChanges();
-    if (code === 'PROFESSIONAL') {
-      http.expectOne(clinicUrl).flush(clinic);
-      expect(element.querySelector('.subscription-summary')?.textContent).toContain('Profesional');
-      expect(element.querySelectorAll('.plans-grid button')[1].getAttribute('aria-pressed')).toBe('true');
-      expect(navigate).not.toHaveBeenCalled();
-    } else {
-      expect(element.querySelector('.subscription-summary, .card.selected')).toBeNull();
-      expect(navigate).toHaveBeenCalledWith([], {
-        relativeTo: TestBed.inject(ActivatedRoute), queryParams: { plan: null },
-        queryParamsHandling: 'merge', replaceUrl: true
-      });
-    }
-  });
-
-  it('updates selection when the route query changes after loading', () => {
-    http.expectOne(url).flush(plans);
-    queryParams.next(convertToParamMap({ plan: 'BASIC' }));
-    http.expectOne(clinicUrl).flush(clinic);
-    fixture.detectChanges();
-    expect(element.querySelector('.subscription-summary')?.textContent).toContain('Básico');
-    queryParams.next(convertToParamMap({}));
-    fixture.detectChanges();
-    expect(element.querySelector('.subscription-summary')).toBeNull();
-  });
-
-  it.each([
-    [0, 'No hay conexión con la API. Intenta de nuevo.'],
-    [403, 'Tu cuenta no tiene permiso para esta operación.'],
-    [401, 'No se pudieron cargar los planes.'],
-    [500, 'No se pudieron cargar los planes.']
-  ])('shows the message for status %s and retries successfully', (status, message) => {
-    const request = http.expectOne(url);
-    if (status === 0) {
-      request.error(new ProgressEvent('error'));
-    } else {
-      request.flush({ code: 'PLAN_CATALOG_ERROR' }, { status, statusText: 'Error' });
-    }
-    fixture.detectChanges();
-    expect(element.querySelector('[role="alert"]')?.textContent).toBe(message);
-    expect(element.textContent).not.toContain('No hay planes disponibles por ahora.');
-    const retry = Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Reintentar');
-    expect(retry?.textContent).toBe('Reintentar');
-    retry!.click();
-    fixture.detectChanges();
-    expect(element.querySelector('[role="alert"]')).toBeNull();
     expect(element.querySelector('[role="status"]')?.textContent).toBe('Cargando planes…');
-    http.expectOne({ method: 'GET', url }).flush(plans);
+    http.expectOne(me).flush({}, { status: 500, statusText: 'Error' });
     fixture.detectChanges();
-    expect(element.querySelectorAll('.card')).toHaveLength(3);
-    expect(Array.from(element.querySelectorAll('button')).some(button => button.textContent === 'Reintentar')).toBe(false);
+    expect(element.querySelector('[role="alert"]')?.textContent).toBe('No se pudo cargar tu suscripción.');
+    button('Reintentar')!.click();
+    http.expectOne(url).flush(plans);
+    http.expectOne(me).flush({}, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(link('Elegir plan')).toBeDefined();
   });
-
-  it('shows the empty catalog message', () => {
+  it('shows catalog failures and empty catalogs', () => {
+    fixture.detectChanges();
+    http.expectOne(url).flush({}, { status: 500, statusText: 'Error' });
+    http.expectOne(me).flush({}, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('No se pudieron cargar los planes.');
+    button('Reintentar')!.click();
     http.expectOne(url).flush([]);
+    http.expectOne(me).flush({}, { status: 404, statusText: 'Not Found' });
     fixture.detectChanges();
     expect(element.textContent).toContain('No hay planes disponibles por ahora.');
-    expect(element.querySelector('.plans-grid, [role="alert"], [role="status"]')).toBeNull();
-  });
-
-  function buttonByText(text: string): HTMLButtonElement {
-    return Array.from(element.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === text)!;
-  }
-
-  function selectBasic(): void {
-    http.expectOne(url).flush(plans);
-    fixture.detectChanges();
-    buttonByText('Elegir plan').click();
-    fixture.detectChanges();
-  }
-
-  it('shows the contracting clinic and enables payment only after it loads', () => {
-    selectBasic();
-    expect(buttonByText('Continuar al pago').disabled).toBe(true);
-    fixture.componentInstance.checkout();
-    http.expectNone(checkoutUrl);
-    http.expectOne(clinicUrl).flush(clinic);
-    fixture.detectChanges();
-    expect(element.querySelector('.subscription-summary')?.textContent).toContain('Contratará: ' + clinic.name);
-    expect(buttonByText('Continuar al pago').disabled).toBe(false);
-  });
-
-  function expectOrganizationWarning(): void {
-    fixture.detectChanges();
-    expect(element.querySelector('.subscription-summary')?.textContent)
-      .toContain('Registra los datos de tu clínica antes de contratar');
-    expect(element.querySelector('.subscription-summary a')?.getAttribute('href')).toBe('/planning/sites');
-    expect(buttonByText('Continuar al pago').disabled).toBe(true);
-    expect(assign).not.toHaveBeenCalled();
-  }
-
-  it('requires a clinic after a 404 and prevents any checkout POST', () => {
-    selectBasic();
-    http.expectOne(clinicUrl).flush({}, { status: 404, statusText: 'Not Found' });
-    expectOrganizationWarning();
-    buttonByText('Continuar al pago').click();
-    fixture.componentInstance.checkout();
-    http.expectNone(checkoutUrl);
-  });
-
-  it('retries loading the clinic after an error without hiding the plans', () => {
-    selectBasic();
-    http.expectOne(clinicUrl).flush({}, { status: 500, statusText: 'Error' });
-    fixture.detectChanges();
-    expect(element.querySelectorAll('.card')).toHaveLength(3);
-    expect(buttonByText('Continuar al pago').disabled).toBe(true);
-    buttonByText('Reintentar').click();
-    http.expectOne({ method: 'GET', url: clinicUrl }).flush(clinic);
-    fixture.detectChanges();
-    expect(buttonByText('Continuar al pago').disabled).toBe(false);
-    expect(element.textContent).toContain('Contratará: ' + clinic.name);
-  });
-
-  const checkoutUrl = environment.apiUrl + '/subscriptions/checkout-sessions';
-
-  it('continues to billing without creating a checkout session', () => {
-    selectBasic();
-    http.expectOne(clinicUrl).flush(clinic);
-    fixture.detectChanges();
-    buttonByText('Continuar al pago').click();
-    expect(navigate).toHaveBeenLastCalledWith(['/subscriptions/checkout'], { queryParams: { plan: 'BASIC' } });
-    http.expectNone(checkoutUrl);
-    expect(assign).not.toHaveBeenCalled();
   });
 });

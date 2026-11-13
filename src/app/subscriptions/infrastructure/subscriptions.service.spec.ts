@@ -19,7 +19,7 @@ describe('SubscriptionsService HTTP contract', () => {
   it('gets the catalog from the subscriptions plans endpoint', () => {
     const plans: SubscriptionPlan[] = [{
       code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' },
-      billingInterval: 'MONTH', purchaseMode: 'CHECKOUT'
+      billingInterval: 'MONTH', purchaseMode: 'CHECKOUT', quota: { sites: 1, floors: 3, beacons: 15 }
     }];
     service.loadPlans().subscribe(result => expect(result).toEqual(plans));
     http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/plans' }).flush(plans);

@@ -9,11 +9,18 @@ export interface Money {
 }
 
 export interface SubscriptionPlan {
+  quota: PlanQuota;
   code: PlanCode;
   name: string;
   price: Money;
   billingInterval: 'MONTH';
   purchaseMode: PurchaseMode;
+}
+
+export interface PlanQuota {
+  sites: number | null;
+  floors: number | null;
+  beacons: number | null;
 }
 
 export type CheckoutPlanCode = Exclude<PlanCode, 'ENTERPRISE'>;

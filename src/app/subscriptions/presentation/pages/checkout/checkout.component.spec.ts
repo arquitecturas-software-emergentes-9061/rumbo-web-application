@@ -15,8 +15,8 @@ describe('CheckoutComponent billing step', () => {
   const checkoutUrl = api + '/subscriptions/checkout-sessions';
   const clinic = { id: 'clinic-1', name: 'Clínica Rumbo' };
   const plans = [
-    { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT' },
-    { code: 'ENTERPRISE', name: 'Enterprise', price: { amount: 100, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CONTACT_SALES' }
+    { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CHECKOUT', quota: { sites: 1, floors: 3, beacons: 15 } },
+    { code: 'ENTERPRISE', name: 'Enterprise', price: { amount: 100, currency: 'PEN' }, billingInterval: 'MONTH', purchaseMode: 'CONTACT_SALES', quota: { sites: null, floors: null, beacons: null } }
   ];
   const billing = { legalName: 'Clínica Rumbo', ruc: '20123456789', fiscalAddress: 'Av. Lima 123', billingEmail: 'pagos@example.com' };
   const session = { checkoutUrl: 'https://checkout.stripe.com/c/pay/test', billing };
