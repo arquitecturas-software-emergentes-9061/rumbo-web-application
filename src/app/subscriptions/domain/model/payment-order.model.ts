@@ -1,4 +1,8 @@
+import { BillingDetails } from './billing-details.model';
+
 export interface PaymentOrder {
+  billing: BillingDetails;
+  paidAt: string | null;
   organization: { id: string; name: string };
   orderId: string;
   planCode: string;

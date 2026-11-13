@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { BillingDetails } from '../domain/model/billing-details.model';
 import { Injectable, inject } from '@angular/core';
 import { catchError, of, throwError } from 'rxjs';
 import { ContractingClinic } from '../domain/model/contracting-clinic.model';
@@ -13,9 +14,9 @@ export class SubscriptionsService implements SubscriptionsPort {
   private readonly http = inject(HttpClient);
   private readonly plansUrl = environment.apiUrl + '/subscriptions/plans';
 
-  createCheckoutSession(planCode: CheckoutPlanCode) {
+  createCheckoutSession(planCode: CheckoutPlanCode, billing: BillingDetails) {
     return this.http.post<CheckoutSession>(
-      environment.apiUrl + '/subscriptions/checkout-sessions', { planCode }
+      environment.apiUrl + '/subscriptions/checkout-sessions', { planCode, billing }
     );
   }
 

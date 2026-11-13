@@ -1,3 +1,5 @@
+import { BillingDetails } from './billing-details.model';
+
 export type PlanCode = 'BASIC' | 'PROFESSIONAL' | 'ENTERPRISE';
 export type PurchaseMode = 'CHECKOUT' | 'CONTACT_SALES';
 
@@ -17,6 +19,7 @@ export interface SubscriptionPlan {
 export type CheckoutPlanCode = Exclude<PlanCode, 'ENTERPRISE'>;
 
 export interface CheckoutSession {
+  billing: BillingDetails;
   organization: { id: string; name: string };
   orderId: string;
   planCode: CheckoutPlanCode;
