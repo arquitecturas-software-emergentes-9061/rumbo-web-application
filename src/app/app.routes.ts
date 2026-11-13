@@ -66,6 +66,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'subscriptions/me',
+    loadComponent: () => import('./subscriptions/presentation/pages/my-subscription/my-subscription.component')
+      .then(module => module.MySubscriptionComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: 'subscriptions/plans',
     loadComponent: () => import('./subscriptions/presentation/pages/plans/plans.component')
       .then(module => module.PlansComponent),
