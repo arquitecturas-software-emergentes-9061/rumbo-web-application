@@ -12,6 +12,8 @@ import { PaymentResultComponent } from './payment-result.component';
 describe('PaymentResultComponent', () => {
   const id = '12345678-1234-1234-1234-123456789abc';
   const url = environment.apiUrl + '/subscriptions/payment-orders/' + id;
+  const meUrl = environment.apiUrl + '/subscriptions/me';
+  const active = { status: 'ACTIVE', plan: { code: 'BASIC', name: 'Básico' }, currentPeriodStart: '2026-11-12T12:00:00Z', currentPeriodEnd: '2026-12-12T12:00:00Z', daysRemaining: 30 };
   const order = { orderId: id, planCode: 'BASIC', status: 'PAID', amount: 39.90, currency: 'PEN', createdAt: '2026-11-12T00:00:00Z' };
   let fixture: ComponentFixture<PaymentResultComponent>;
   let http: HttpTestingController;
@@ -50,16 +52,27 @@ describe('PaymentResultComponent', () => {
     http.expectOne(url).flush({ ...order, status });
     fixture.detectChanges();
   }
+  function activate(subscription = active): void {
+    http.expectOne(meUrl).flush(subscription);
+    fixture.detectChanges();
+  }
+  function button(text: string): HTMLButtonElement {
+    return Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === text)!;
+  }
   it('announces paid success with the plan, amount and panel link', () => {
-    start(); respond('PAID');
+    start(); respond('PAID'); activate();
     expect(element.querySelector('.success[role="status"]')?.textContent).toContain('Pago confirmado. Tu plan Básico está activo.');
     expect(element.textContent).toContain('S/ 39.90');
-    expect(element.querySelector('.primary-action')?.getAttribute('href')).toBe('/admin');
+    expect(element.textContent).toContain('Del 12/11/2026 al 12/12/2026');
+    expect(element.textContent).toContain('Quedan 30 días');
+    const link = (text: string) => Array.from(element.querySelectorAll('a'))
+      .find(item => item.textContent?.trim() === text);
+    expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
   });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
     vi.advanceTimersByTime(1999); http.expectNone(url);
-    vi.advanceTimersByTime(1); respond('PAID');
+    vi.advanceTimersByTime(1); respond('PAID'); activate();
     vi.advanceTimersByTime(10000); http.expectNone(url);
     expect(element.querySelector('.success')).not.toBeNull();
   });
@@ -70,7 +83,7 @@ describe('PaymentResultComponent', () => {
     expect(element.textContent).toContain('Tu pago aún se está confirmando. Revisa el estado más tarde.');
     const button = Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === 'Volver a consultar')!;
     expect(button.textContent).toBe('Volver a consultar');
-    button.click(); respond('PAID');
+    button.click(); respond('PAID'); activate();
   });
   it.each(['success', 'cancelled'])('shows cancellation for return status %s', status => {
     start(status); respond('CANCELLED');
@@ -107,12 +120,74 @@ describe('PaymentResultComponent', () => {
     if (status !== 404) {
       const button = Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === 'Reintentar')!;
       expect(button.textContent).toBe('Reintentar');
-      button.click(); respond('PAID');
+      button.click(); respond('PAID'); activate();
     }
   });
   it('falls back to the plan code when the catalog fails', () => {
-    start('success', id, true); respond('PAID');
+    start('success', id, true); respond('PAID'); activate();
     expect(element.querySelector('.success')?.textContent).toContain('Tu plan BASIC está activo.');
+  });
+  it('waits after a 404 and confirms activation on the next attempt after two seconds', () => {
+    start(); respond('PAID');
+    http.expectOne(meUrl).flush({}, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(element.textContent).toContain('Pago confirmado. Estamos activando tu plan.');
+    expect(element.textContent).not.toContain('activo');
+    vi.advanceTimersByTime(1999); http.expectNone(meUrl);
+    vi.advanceTimersByTime(1); activate();
+    expect(element.textContent).toContain('Tu plan Básico está activo.');
+    vi.advanceTimersByTime(10000); http.expectNone(meUrl);
+  });
+  it.each([
+    { ...active, status: 'EXPIRED' },
+    { ...active, plan: { code: 'PROFESSIONAL', name: 'Profesional' } }
+  ])('does not announce activation for an incompatible subscription %j', subscription => {
+    start(); respond('PAID'); activate(subscription);
+    expect(element.textContent).toContain('Estamos activando tu plan.');
+    expect(element.textContent).not.toContain('activo');
+  });
+  it('exhausts five activation attempts and retries only the subscription by button text', () => {
+    start(); respond('PAID');
+    for (let i = 0; i < 5; i++) {
+      if (i) vi.advanceTimersByTime(2000);
+      http.expectOne(meUrl).flush({}, { status: 404, statusText: 'Not Found' });
+    }
+    fixture.detectChanges();
+    expect(element.textContent).toContain('La activación está tardando. Revisa Mi suscripción más tarde.');
+    expect(element.textContent).not.toContain('activo');
+    vi.advanceTimersByTime(10000); http.expectNone(meUrl);
+    button('Volver a consultar').click();
+    http.expectNone(url); activate({ ...active, daysRemaining: 1 });
+    expect(element.textContent).toContain('Queda 1 día');
+  });
+  it('shows an activation HTTP error and retries by button text', () => {
+    start(); respond('PAID');
+    http.expectOne(meUrl).flush({}, { status: 500, statusText: 'Error' });
+    fixture.detectChanges();
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('No se pudo confirmar la activación');
+    expect(element.textContent).not.toContain('activo');
+    vi.advanceTimersByTime(10000); http.expectNone(meUrl);
+    button('Reintentar').click(); activate();
+    expect(element.textContent).toContain('Tu plan Básico está activo.');
+  });
+  it.each(['FAILED', 'EXPIRED', 'CANCELLED', 'PENDING'])('does not query subscriptions for %s', status => {
+    start(); respond(status);
+    http.expectNone(meUrl);
+    expect(element.textContent).not.toContain('está activo');
+  });
+  it.each(['destroy', 'parameters'])('cancels activation timers on %s', action => {
+    start(); respond('PAID');
+    http.expectOne(meUrl).flush({}, { status: 404, statusText: 'Not Found' });
+    if (action === 'destroy') fixture.destroy();
+    else query.next(convertToParamMap({ orderId: 'invalid' }));
+    vi.advanceTimersByTime(10000); http.expectNone(meUrl);
+  });
+  it.each(['destroy', 'parameters'])('cancels an activation request on %s', action => {
+    start(); respond('PAID');
+    const request = http.expectOne(meUrl);
+    if (action === 'destroy') fixture.destroy();
+    else query.next(convertToParamMap({ orderId: 'invalid' }));
+    expect(request.cancelled).toBe(true);
   });
   it('cancels polling when destroyed', () => {
     start(); respond('PENDING'); fixture.destroy();

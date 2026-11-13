@@ -19,7 +19,19 @@
         <p role="status">Pago cancelado. No se realizó ningún cargo.</p>
       } @else if (!error()) {
         @if (order()?.status === 'PAID') {
-          <p class="success" role="status">Pago confirmado. Tu plan {{ planName() }} está activo.</p>
+          @if (activeSubscription(); as current) {
+            <p class="success" role="status">Pago confirmado. Tu plan {{ planName() }} está activo.</p>
+            <p>Del {{ current.currentPeriodStart | date:'dd/MM/yyyy' }} al {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+            <p>{{ current.daysRemaining === 1 ? 'Queda 1 día' : 'Quedan ' + current.daysRemaining + ' días' }}</p>
+          } @else if (activationError()) {
+            <p class="alert" role="alert">{{ activationError() }}</p>
+            <button type="button" class="outline" (click)="retryActivation()">Reintentar</button>
+          } @else if (activationExhausted()) {
+            <p role="status">La activación está tardando. Revisa Mi suscripción más tarde.</p>
+            <button type="button" class="outline" (click)="retryActivation()">Volver a consultar</button>
+          } @else {
+            <p role="status">Pago confirmado. Estamos activando tu plan.</p>
+          }
           <a class="primary-action" routerLink="/admin">Ir al panel</a>
         } @else if (order()?.status === 'FAILED' || order()?.status === 'EXPIRED') {
           <p class="alert" role="alert">El pago no se completó.</p>

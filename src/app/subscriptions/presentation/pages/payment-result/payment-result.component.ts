@@ -1,8 +1,10 @@
+import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { MySubscription } from '../../../domain/model/my-subscription.model';
 import { PaymentOrder } from '../../../domain/model/payment-order.model';
 import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
 import { SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
@@ -10,7 +12,7 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
 
 @Component({
   selector: 'app-payment-result',
-  imports: [RouterLink, AdminShellComponent],
+  imports: [DatePipe, RouterLink, AdminShellComponent],
   templateUrl: './payment-result.component.html',
   styleUrl: './payment-result.component.css'
 })
@@ -20,6 +22,12 @@ export class PaymentResultComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private request?: Subscription;
   private timer?: ReturnType<typeof setTimeout>;
+  private activationRequest?: Subscription;
+  private activationTimer?: ReturnType<typeof setTimeout>;
+  private activationAttempts = 0;
+  readonly activeSubscription = signal<MySubscription | null>(null);
+  readonly activationExhausted = signal(false);
+  readonly activationError = signal<string | null>(null);
   private orderId = '';
   private attempts = 0;
   readonly order = signal<PaymentOrder | null>(null);
@@ -36,6 +44,9 @@ export class PaymentResultComponent implements OnInit {
     this.destroyRef.onDestroy(() => this.stop());
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       this.stop();
+      this.activeSubscription.set(null);
+      this.activationError.set(null);
+      this.activationExhausted.set(false);
       this.order.set(null);
       this.error.set(null);
       this.loading.set(false);
@@ -60,9 +71,37 @@ export class PaymentResultComponent implements OnInit {
     this.query();
   }
 
+  retryActivation(): void {
+    clearTimeout(this.activationTimer);
+    this.activationRequest?.unsubscribe();
+    this.activationAttempts = 0;
+    this.activeSubscription.set(null);
+    this.activationError.set(null);
+    this.activationExhausted.set(false);
+    this.queryActivation();
+  }
+
+  private queryActivation(): void {
+    this.activationAttempts++;
+    this.activationRequest = this.service.getMySubscription().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: subscription => {
+        if (subscription?.status === 'ACTIVE' && subscription.plan.code === this.order()?.planCode) {
+          this.activeSubscription.set(subscription);
+        } else if (this.activationAttempts < 5) {
+          this.activationTimer = setTimeout(() => this.queryActivation(), 2000);
+        } else {
+          this.activationExhausted.set(true);
+        }
+      },
+      error: () => this.activationError.set('No se pudo confirmar la activación de tu plan. Intenta de nuevo.')
+    });
+  }
+
   private stop(): void {
     clearTimeout(this.timer);
     this.request?.unsubscribe();
+    clearTimeout(this.activationTimer);
+    this.activationRequest?.unsubscribe();
   }
 
   private query(): void {
@@ -72,6 +111,7 @@ export class PaymentResultComponent implements OnInit {
       next: order => {
         this.order.set(order);
         this.loading.set(false);
+        if (order.status === 'PAID' && !this.cancelled()) this.retryActivation();
         if (order.status === 'PENDING' && !this.cancelled()) {
           if (this.attempts < 5) this.timer = setTimeout(() => this.query(), 2000);
           else this.exhausted.set(true);

@@ -29,4 +29,24 @@ describe('SubscriptionsService HTTP contract', () => {
     http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/payment-orders/order%2Fwith%20space' }).flush({});
   });
 
+  it('gets my subscription', () => {
+    const subscription = { status: 'ACTIVE', daysRemaining: 30 };
+    service.getMySubscription().subscribe(result => expect(result).toEqual(subscription));
+    http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/me' }).flush(subscription);
+  });
+
+  it('returns null for a missing subscription', () => {
+    service.getMySubscription().subscribe(result => expect(result).toBeNull());
+    http.expectOne(environment.apiUrl + '/subscriptions/me').flush(
+      { code: 'SUBSCRIPTION_NOT_FOUND' }, { status: 404, statusText: 'Not Found' });
+  });
+
+  it.each([0, 401, 403, 500])('propagates subscription error %s', status => {
+    const failed = vi.fn();
+    service.getMySubscription().subscribe({ error: failed });
+    const request = http.expectOne(environment.apiUrl + '/subscriptions/me');
+    if (status === 0) request.error(new ProgressEvent('error'));
+    else request.flush({}, { status, statusText: 'Error' });
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ status }));
+  });
 });
