@@ -74,6 +74,20 @@ describe('PaymentResultComponent', () => {
     expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
     expect(link('Ver mi suscripción')?.getAttribute('href')).toBe('/subscriptions/me');
   });
+  it('shows paid billing details from the order', () => {
+    start();
+    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', billing: {
+      legalName: 'Clínica Ejemplo', ruc: '20491823901', fiscalAddress: 'Av. Lima 123',
+      billingEmail: 'pagos@example.test', purchaseOrder: 'PO-123'
+    } });
+    fixture.detectChanges();
+    activate();
+    const billing = element.querySelector('[aria-labelledby=billing-summary-title]')?.textContent;
+    for (const value of ['Clínica Ejemplo', '20491823901', 'Av. Lima 123', 'pagos@example.test', 'PO-123']) {
+      expect(billing).toContain(value);
+    }
+    expect(element.textContent).toContain('Fecha de pago: 12/11/2026');
+  });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
     vi.advanceTimersByTime(1999); http.expectNone(url);

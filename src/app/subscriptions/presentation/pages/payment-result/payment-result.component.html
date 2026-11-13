@@ -49,6 +49,23 @@
           <p>Organización: {{ payment.organization.name }}</p>
           <p>Fecha de la orden: {{ payment.createdAt | date:'dd/MM/yyyy' }}</p>
           <p>Número de orden: {{ payment.orderId }}</p>
+          @if (payment.paidAt; as paidAt) {
+            <p>Fecha de pago: {{ paidAt | date:'dd/MM/yyyy' }}</p>
+          }
+          @if (payment.billing; as billing) {
+            <section aria-labelledby="billing-summary-title">
+              <h3 id="billing-summary-title">Datos de facturación</h3>
+              <dl>
+                <dt>Razón social</dt><dd>{{ billing.legalName }}</dd>
+                <dt>RUC</dt><dd>{{ billing.ruc }}</dd>
+                <dt>Dirección de facturación</dt><dd>{{ billing.fiscalAddress }}</dd>
+                <dt>Correo de facturación</dt><dd>{{ billing.billingEmail }}</dd>
+                @if (billing.purchaseOrder; as purchaseOrder) {
+                  <dt>Orden de compra</dt><dd>{{ purchaseOrder }}</dd>
+                }
+              </dl>
+            </section>
+          }
         }
         <p>Plan: {{ planName() }}</p>
         <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
