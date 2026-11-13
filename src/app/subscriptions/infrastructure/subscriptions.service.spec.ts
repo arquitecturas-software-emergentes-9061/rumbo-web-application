@@ -27,6 +27,7 @@ describe('SubscriptionsService HTTP contract', () => {
   it('posts the chosen plan to create a checkout session', () => {
     const session = {
       orderId: 'order-1', planCode: 'BASIC', status: 'PENDING', amount: 39.90,
+      organization: { id: 'clinic-1', name: 'Clinic' },
       currency: 'PEN', checkoutUrl: 'https://checkout.stripe.com/c/pay/test'
     };
     service.createCheckoutSession('BASIC').subscribe(result => expect(result).toEqual(session));

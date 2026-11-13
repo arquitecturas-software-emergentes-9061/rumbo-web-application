@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { catchError, of, throwError } from 'rxjs';
+import { ContractingClinic } from '../domain/model/contracting-clinic.model';
 import { environment } from '../../../environments/environment';
 import { MySubscription } from '../domain/model/my-subscription.model';
 import { CheckoutPlanCode, CheckoutSession, SubscriptionPlan } from '../domain/model/subscription-plan.model';
@@ -18,14 +19,20 @@ export class SubscriptionsService implements SubscriptionsPort {
     );
   }
 
-  loadPlans() {
-    return this.http.get<SubscriptionPlan[]>(this.plansUrl);
+  getContractingClinic() {
+    return this.http.get<ContractingClinic>(environment.apiUrl + '/clinics/me').pipe(
+      catchError(error => error.status === 404 ? of(null) : throwError(() => error))
+    );
   }
 
   getMySubscription() {
     return this.http.get<MySubscription>(environment.apiUrl + '/subscriptions/me').pipe(
       catchError(error => error.status === 404 ? of(null) : throwError(() => error))
     );
+  }
+
+  loadPlans() {
+    return this.http.get<SubscriptionPlan[]>(this.plansUrl);
   }
 
   getPaymentOrder(orderId: string) {

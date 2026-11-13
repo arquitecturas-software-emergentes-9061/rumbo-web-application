@@ -20,3 +20,5 @@ p { margin: 6px 0 10px; }
 .primary-action { min-height: 40px; margin-right: 8px; padding: 8px 14px; font: inherit; font-weight: 650; color: white; background: var(--primary-action); border: 1px solid transparent; border-radius: var(--control-radius); cursor: pointer; }
 .primary-action:hover:not(:disabled) { background: var(--primary-hover); }
 button:disabled { opacity: .6; cursor: not-allowed; }
+
+a.outline { display: inline-block; text-decoration: none; margin-right: 8px; }

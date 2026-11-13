@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { Observable } from 'rxjs';
+import { ContractingClinic } from '../domain/model/contracting-clinic.model';
 import { MySubscription } from '../domain/model/my-subscription.model';
 import { PaymentOrder } from '../domain/model/payment-order.model';
 import { CheckoutPlanCode, CheckoutSession, SubscriptionPlan } from '../domain/model/subscription-plan.model';
@@ -9,6 +10,7 @@ export interface SubscriptionsPort {
   createCheckoutSession(planCode: CheckoutPlanCode): Observable<CheckoutSession>;
   getPaymentOrder(orderId: string): Observable<PaymentOrder>;
   getMySubscription(): Observable<MySubscription | null>;
+  getContractingClinic(): Observable<ContractingClinic | null>;
 }
 export const SUBSCRIPTIONS_PORT = new InjectionToken<SubscriptionsPort>('Subscriptions plan catalog');
 

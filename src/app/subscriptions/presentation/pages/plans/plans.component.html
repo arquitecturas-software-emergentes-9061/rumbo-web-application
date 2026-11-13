@@ -39,10 +39,21 @@
         <p>Facturación mensual</p>
         <p>Soles (PEN)</p>
         <p>El pago se realiza en una página segura de Stripe. Podrás revisar el resultado al volver.</p>
+        @if (organizationLoading()) {
+          <p>Cargando clínica…</p>
+        } @else if (organizationLoadFailed()) {
+          <p class="alert" role="alert">No se pudieron cargar los datos de tu clínica.</p>
+          <button type="button" class="outline" (click)="loadOrganization()">Reintentar</button>
+        } @else if (organization(); as clinic) {
+          <p>Contratará: {{ clinic.name }}</p>
+        } @else {
+          <p class="alert" role="alert">Registra los datos de tu clínica antes de contratar</p>
+          <a class="outline" routerLink="/planning/sites">Registrar clínica</a>
+        }
         @if (checkoutError()) {
           <p class="alert" role="alert">{{ checkoutError() }}</p>
         }
-        <button type="button" class="primary-action" [disabled]="checkingOut()" (click)="checkout()">{{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago' }}</button>
+        <button type="button" class="primary-action" [disabled]="checkingOut() || organizationLoading() || organizationLoadFailed() || !organization()" (click)="checkout()">{{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago' }}</button>
         <button type="button" class="outline" [disabled]="checkingOut()" (click)="clearSelection()">Cambiar plan</button>
       </section>
     }

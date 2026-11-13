@@ -2,7 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
+import { ContractingClinic } from '../../../domain/model/contracting-clinic.model';
 import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
 import { BROWSER_NAVIGATION, SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
 import { AdminShellComponent } from '../../../../shared/presentation/admin-shell/admin-shell.component';
@@ -20,6 +21,11 @@ export class PlansComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private catalogLoaded = false;
+  private organizationRequest?: Subscription;
+
+  readonly organization = signal<ContractingClinic | null>(null);
+  readonly organizationLoading = signal(false);
+  readonly organizationLoadFailed = signal(false);
 
   readonly checkingOut = signal(false);
   readonly checkoutError = signal<string | null>(null);
@@ -40,6 +46,7 @@ export class PlansComponent implements OnInit {
     if (this.checkingOut() || plan.purchaseMode !== 'CHECKOUT') return;
     this.checkoutError.set(null);
     this.selectedPlan.set(plan);
+    this.loadOrganization();
     this.updatePlanQuery(plan.code);
   }
 
@@ -47,12 +54,13 @@ export class PlansComponent implements OnInit {
     if (this.checkingOut()) return;
     this.checkoutError.set(null);
     this.selectedPlan.set(null);
+    this.organizationRequest?.unsubscribe();
     this.updatePlanQuery(null);
   }
 
   checkout(): void {
     const plan = this.selectedPlan();
-    if (this.checkingOut() || !plan || plan.purchaseMode !== 'CHECKOUT' ||
+    if (this.checkingOut() || this.organizationLoading() || this.organizationLoadFailed() || !this.organization() || !plan || plan.purchaseMode !== 'CHECKOUT' ||
       (plan.code !== 'BASIC' && plan.code !== 'PROFESSIONAL')) return;
     this.checkingOut.set(true);
     this.checkoutError.set(null);
@@ -74,6 +82,10 @@ export class PlansComponent implements OnInit {
         }
       },
       error: (error: HttpErrorResponse) => {
+        if (error.status === 409 && error.error?.code === 'ORGANIZATION_REQUIRED') {
+          this.organization.set(null);
+          return;
+        }
         const messages: Record<string, string> = {
           '409:PLAN_REQUIRES_SALES_CONTACT': 'Este plan requiere contactar a ventas.',
           '404:PLAN_NOT_FOUND': 'El plan ya no está disponible.',
@@ -92,8 +104,28 @@ export class PlansComponent implements OnInit {
   private restoreSelection(): void {
     const code = this.route.snapshot.queryParamMap.get('plan');
     const plan = this.plans().find(plan => plan.code === code && plan.purchaseMode === 'CHECKOUT');
+    const changed = this.selectedPlan()?.code !== plan?.code;
     this.selectedPlan.set(plan ?? null);
+    if (changed) {
+      this.organizationRequest?.unsubscribe();
+      if (plan) this.loadOrganization();
+    }
     if (code !== null && !plan) this.updatePlanQuery(null);
+  }
+
+  loadOrganization(): void {
+    if (!this.selectedPlan() || this.checkingOut()) return;
+    this.organizationRequest?.unsubscribe();
+    this.organization.set(null);
+    this.organizationLoading.set(true);
+    this.organizationLoadFailed.set(false);
+    this.organizationRequest = this.service.getContractingClinic().pipe(
+      takeUntilDestroyed(this.destroyRef),
+      finalize(() => this.organizationLoading.set(false))
+    ).subscribe({
+      next: organization => this.organization.set(organization),
+      error: () => this.organizationLoadFailed.set(true)
+    });
   }
 
   private updatePlanQuery(plan: string | null): void {

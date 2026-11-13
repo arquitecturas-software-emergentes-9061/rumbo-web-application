@@ -17,6 +17,7 @@ export interface SubscriptionPlan {
 export type CheckoutPlanCode = Exclude<PlanCode, 'ENTERPRISE'>;
 
 export interface CheckoutSession {
+  organization: { id: string; name: string };
   orderId: string;
   planCode: CheckoutPlanCode;
   status: 'PENDING';
