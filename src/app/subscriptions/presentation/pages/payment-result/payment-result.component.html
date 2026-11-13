@@ -7,6 +7,11 @@
     </nav>
     <h1>Resultado del pago</h1>
   </header>
+  @if (unsuccessful()) {
+    <ol class="steps" aria-label="Pasos del pago">
+      <li>1 Plan</li><li>2 Datos de facturación</li><li aria-current="step">3 Pago (actual)</li>
+    </ol>
+  }
   <section class="result">
     @if (notFound()) {
       <p class="alert" role="alert">No encontramos la orden de pago.</p>
@@ -15,8 +20,34 @@
         <p class="alert" role="alert">{{ error() }}</p>
         <button type="button" class="outline" (click)="retry()">Reintentar</button>
       }
-      @if (cancelled() || order()?.status === 'CANCELLED') {
-        <p role="status">Pago cancelado. No se realizó ningún cargo.</p>
+      @if (unsuccessful() && !error()) {
+        <div class="alert failure-banner" role="alert">{{ failureTitle() }} — Tu suscripción no cambió. Prueba con otro medio de pago o contacta a tu banco.</div>
+        <div class="checkout-grid">
+          <section class="card" aria-labelledby="failure-title">
+            <span class="failure-tag">{{ cancelled() || order()?.status === 'CANCELLED' ? 'CANCELADA' : order()?.status === 'EXPIRED' ? 'EXPIRADA' : 'FALLIDA' }}</span>
+            <h2 id="failure-title">Transacción no realizada</h2>
+            <p>Revisa los datos de facturación antes de continuar a Stripe Checkout.</p>
+            @if (retryPlan(); as selected) {
+              <div class="actions">
+                <a routerLink="/subscriptions/checkout" [queryParams]="{ plan: selected.code, orderId: order()?.orderId }">← Volver a datos de facturación</a>
+                <a class="primary-action retry-payment" routerLink="/subscriptions/checkout"
+                  [queryParams]="{ plan: selected.code, orderId: order()?.orderId }">Reintentar pago · {{ selected.price.currency === 'PEN' ? 'S/' : selected.price.currency }} {{ selected.price.amount.toFixed(2) }}</a>
+              </div>
+            } @else {
+              <p>No se pudo obtener un plan disponible para reintentar. Vuelve a la selección de planes.</p>
+            }
+          </section>
+          <aside class="card" aria-labelledby="retry-summary-title">
+            <h2 id="retry-summary-title">Resumen del pedido</h2>
+            <h3>{{ planName() }}</h3>
+            @if (retryPlan(); as selected) {
+              <span class="cycle">{{ selected.billingInterval === 'MONTH' ? 'Mensual' : selected.billingInterval }}</span>
+              <p class="price">{{ selected.price.currency === 'PEN' ? 'S/' : selected.price.currency }} {{ selected.price.amount.toFixed(2) }}</p>
+              <p>Moneda: {{ selected.price.currency }}</p>
+              <p>Pago único con Stripe Checkout.</p>
+            }
+          </aside>
+        </div>
       } @else if (!error()) {
         @if (order()?.status === 'PAID') {
           @if (activeSubscription(); as current) {
@@ -34,8 +65,6 @@
           }
           <a class="primary-action" routerLink="/admin">Ir al panel</a>
           <a class="outline" routerLink="/subscriptions/me">Ver mi suscripción</a>
-        } @else if (order()?.status === 'FAILED' || order()?.status === 'EXPIRED') {
-          <p class="alert" role="alert">El pago no se completó.</p>
         } @else if (exhausted()) {
           <p role="status">Tu pago aún se está confirmando. Revisa el estado más tarde.</p>
           <button type="button" class="outline" (click)="retry()">Volver a consultar</button>
@@ -67,8 +96,10 @@
             </section>
           }
         }
-        <p>Plan: {{ planName() }}</p>
-        <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
+        @if (!unsuccessful()) {
+          <p>Plan: {{ planName() }}</p>
+          <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
+        }
       }
     }
     @if (notFound() || cancelled() || order()?.status !== 'PAID' || error()) {

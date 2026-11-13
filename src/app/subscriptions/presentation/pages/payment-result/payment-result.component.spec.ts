@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import { AUTH_PORT } from '../../../../iam/application/iam.ports';
@@ -45,7 +45,7 @@ describe('PaymentResultComponent', () => {
     if (orderId === id) {
       const catalog = http.expectOne(environment.apiUrl + '/subscriptions/plans');
       if (catalogFails) catalog.flush({}, { status: 500, statusText: 'Error' });
-      else catalog.flush([{ code: 'BASIC', name: 'Básico' }]);
+      else catalog.flush([{ code: 'BASIC', name: 'Básico', purchaseMode: 'CHECKOUT', billingInterval: 'MONTH', price: { amount: 59.90, currency: 'PEN' } }]);
     }
   }
   function respond(status: string): void {
@@ -59,6 +59,21 @@ describe('PaymentResultComponent', () => {
   function button(text: string): HTMLButtonElement {
     return Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === text)!;
   }
+  it('routes a failed payment to the billing step without querying activation', () => {
+    start();
+    respond('FAILED');
+    http.expectNone(meUrl);
+    expect(element.textContent).toContain('Tu suscripción no cambió');
+    const back = Array.from(element.querySelectorAll('a'))
+      .find(link => link.textContent?.includes('Volver a datos de facturación'));
+    expect(back?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+    expect(element.querySelector('.success')).toBeNull();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    element.querySelector<HTMLAnchorElement>('.retry-payment')!.click();
+    expect(router.serializeUrl(navigate.mock.calls[0][0] as import('@angular/router').UrlTree))
+      .toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+  });
   it('announces paid success with the plan, amount and panel link', () => {
     start(); respond('PAID'); activate();
     expect(element.querySelector('.success[role="status"]')?.textContent).toContain('Pago confirmado. Tu plan Básico está activo.');
@@ -106,17 +121,29 @@ describe('PaymentResultComponent', () => {
   });
   it.each(['success', 'cancelled'])('shows cancellation for return status %s', status => {
     start(status); respond('CANCELLED');
-    expect(element.textContent).toContain('Pago cancelado. No se realizó ningún cargo.');
+    expect(element.textContent).toContain('Pago cancelado — Tu suscripción no cambió.');
     expect(element.textContent).toContain('Básico');
   });
   it('keeps a cancelled return cancelled even if the order is pending', () => {
     start('cancelled'); respond('PENDING');
     vi.advanceTimersByTime(10000); http.expectNone(url);
-    expect(element.textContent).toContain('Pago cancelado. No se realizó ningún cargo.');
+    expect(element.textContent).toContain('Pago cancelado — Tu suscripción no cambió.');
   });
-  it.each(['FAILED', 'EXPIRED'])('shows an alert for %s', status => {
+  it.each([
+    ['FAILED', 'Pago rechazado', 'FALLIDA'],
+    ['EXPIRED', 'La sesión de pago expiró', 'EXPIRADA'],
+    ['CANCELLED', 'Pago cancelado', 'CANCELADA']
+  ])('shows WA15C and a catalog-priced retry for %s without activation', (status, title, tag) => {
     start(); respond(status);
-    expect(element.querySelector('[role="alert"]')?.textContent).toBe('El pago no se completó.');
+    expect(element.querySelector('[role="alert"]')?.textContent).toBe(title + ' — Tu suscripción no cambió. Prueba con otro medio de pago o contacta a tu banco.');
+    expect(element.querySelector('.card h2')?.textContent).toBe('Transacción no realizada');
+    expect(element.querySelector('.failure-tag')?.textContent).toBe(tag);
+    expect(element.querySelector('.retry-payment')?.textContent).toBe('Reintentar pago · S/ 59.90');
+    expect(element.querySelector('.retry-payment')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+    expect(element.textContent).not.toContain('activo');
+    http.expectNone(meUrl);
+    vi.advanceTimersByTime(10000);
+    http.expectNone(url);
   });
   it.each(['', 'invalid'])('rejects missing or invalid order %s without requests', orderId => {
     start('success', orderId);

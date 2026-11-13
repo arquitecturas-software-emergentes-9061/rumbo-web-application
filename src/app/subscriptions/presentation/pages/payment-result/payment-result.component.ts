@@ -14,7 +14,7 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
   selector: 'app-payment-result',
   imports: [DatePipe, RouterLink, AdminShellComponent],
   templateUrl: './payment-result.component.html',
-  styleUrl: './payment-result.component.css'
+  styleUrls: ['../checkout/checkout.component.css', './payment-result.component.css']
 })
 export class PaymentResultComponent implements OnInit {
   private readonly service = inject(SUBSCRIPTIONS_PORT);
@@ -39,6 +39,10 @@ export class PaymentResultComponent implements OnInit {
   readonly notFound = signal(false);
   readonly planName = computed(() => this.plans().find(plan => plan.code === this.order()?.planCode)?.name
     ?? this.order()?.planCode ?? '');
+  readonly retryPlan = computed(() => this.plans().find(plan => plan.code === this.order()?.planCode && plan.purchaseMode === 'CHECKOUT'));
+  readonly unsuccessful = computed(() => this.cancelled() || ['FAILED', 'EXPIRED', 'CANCELLED'].includes(this.order()?.status ?? ''));
+  readonly failureTitle = computed(() => this.cancelled() || this.order()?.status === 'CANCELLED' ? 'Pago cancelado'
+    : this.order()?.status === 'EXPIRED' ? 'La sesión de pago expiró' : 'Pago rechazado');
 
   ngOnInit(): void {
     this.destroyRef.onDestroy(() => this.stop());

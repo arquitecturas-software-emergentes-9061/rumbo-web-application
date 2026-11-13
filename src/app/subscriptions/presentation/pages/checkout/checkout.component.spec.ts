@@ -83,7 +83,61 @@ describe('CheckoutComponent billing step', () => {
     expect(element.querySelectorAll('.field-error')).toHaveLength(4);
     expect(Array.from(element.querySelectorAll('.field-error')).every(error => error.textContent?.includes('Este campo es obligatorio'))).toBe(true);
     expect(element.textContent).toContain('ACCIÓN REQUERIDA');
+    expect(element.textContent).toContain('Datos de facturación incompletos — Completa los campos obligatorios para continuar con el pago.');
+    http.expectNone(request => request.method === 'POST');
     expect(element.querySelectorAll('input[aria-invalid="true"]')).toHaveLength(4);
+    http.expectNone(checkoutUrl);
+  });
+  it.each(['PO-123', null])('loads retry billing from the order and submits it, purchase order %s', purchaseOrder => {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    query.next(convertToParamMap({ plan: 'BASIC', orderId: id }));
+    load();
+    expect(button().disabled).toBe(true);
+    submit();
+    http.expectNone(checkoutUrl);
+    http.expectOne(api + '/subscriptions/payment-orders/' + id).flush({ planCode: 'BASIC', billing: { ...billing, purchaseOrder } });
+    fixture.detectChanges();
+    for (const [key, value] of Object.entries(billing)) {
+      expect(element.querySelector<HTMLInputElement>('#' + key)?.value).toBe(value);
+    }
+    expect(element.querySelector<HTMLInputElement>('#purchaseOrder')?.value).toBe(purchaseOrder ?? '');
+    button().click();
+    const request = http.expectOne({ method: 'POST', url: checkoutUrl });
+    expect(request.request.body).toEqual({ planCode: 'BASIC', billing: { ...billing, ...(purchaseOrder ? { purchaseOrder } : {}) } });
+    request.flush(session);
+    expect(assign).toHaveBeenCalledWith(session.checkoutUrl);
+  });
+  it('allows manual billing after an order prefill error without starting payment', () => {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    query.next(convertToParamMap({ plan: 'BASIC', orderId: id }));
+    load();
+    http.expectOne(api + '/subscriptions/payment-orders/' + id).flush({}, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges(); submit();
+    expect(element.textContent).toContain('No se pudieron recuperar los datos de facturación');
+    expect(element.textContent).toContain('ACCIÓN REQUERIDA');
+    http.expectNone(request => request.method === 'POST');
+    fill();
+    expect(button().disabled).toBe(false);
+  });
+  it('cancels stale prefill when the selected plan changes', () => {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    query.next(convertToParamMap({ plan: 'BASIC', orderId: id }));
+    const request = http.expectOne(api + '/subscriptions/payment-orders/' + id);
+    query.next(convertToParamMap({ plan: 'BASIC' }));
+    expect(request.cancelled).toBe(true);
+    load();
+    expect(fixture.componentInstance.prefillLoading()).toBe(false);
+    expect(fixture.componentInstance.form.controls.legalName.value).toBe('');
+    http.expectNone(checkoutUrl);
+  });
+  it('does not prefill billing from an order for another plan', () => {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    query.next(convertToParamMap({ plan: 'BASIC', orderId: id }));
+    load();
+    http.expectOne(api + '/subscriptions/payment-orders/' + id).flush({ planCode: 'PROFESSIONAL', billing });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.form.controls.legalName.value).toBe('');
+    expect(button().disabled).toBe(true);
     http.expectNone(checkoutUrl);
   });
   it('requires a plan query parameter', () => {

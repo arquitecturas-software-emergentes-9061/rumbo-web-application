@@ -10,3 +10,5 @@
 .success { padding: 12px; color: var(--success); background: var(--success-bg); border-radius: var(--control-radius); }
 .primary-action { display: inline-block; text-decoration: none; }
 a.outline { display: inline-block; text-decoration: none; }
+.failure-banner { color: var(--error); background: var(--error-bg); border-color: var(--error); padding: 16px; margin-bottom: 24px; }
+.failure-tag { display: inline-block; color: var(--error); background: var(--error-bg); border-radius: var(--control-radius); padding: 4px 8px; margin-bottom: 16px; font-size: .75rem; font-weight: 700; }
