@@ -49,7 +49,7 @@
         <div class="actions">
           <a routerLink="/subscriptions/plans" [queryParams]="{ plan: selected.code }">← Volver a la selección de plan</a>
           <button type="submit" class="primary-action"
-            [disabled]="form.invalid || checkingOut() || organizationLoading() || organizationLoadFailed() || !organization()">
+            [disabled]="checkingOut() || organizationLoading() || organizationLoadFailed() || !organization()">
             {{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago →' }}
           </button>
         </div>

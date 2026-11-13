@@ -77,8 +77,9 @@ describe('CheckoutComponent billing step', () => {
   });
   it('shows four required errors and WA15E after empty submit without a POST', () => {
     load();
-    expect(button().disabled).toBe(true);
-    submit();
+    expect(button().disabled).toBe(false);
+    button().click();
+    fixture.detectChanges();
     expect(element.querySelectorAll('.field-error')).toHaveLength(4);
     expect(Array.from(element.querySelectorAll('.field-error')).every(error => error.textContent?.includes('Este campo es obligatorio'))).toBe(true);
     expect(element.textContent).toContain('ACCIÓN REQUERIDA');
@@ -110,7 +111,7 @@ describe('CheckoutComponent billing step', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('El RUC debe tener 11 dígitos');
     expect(element.textContent).toContain('Ingresa un correo válido');
-    expect(button().disabled).toBe(true);
+    expect(button().disabled).toBe(false);
     submit();
     http.expectNone(checkoutUrl);
   });
@@ -139,7 +140,7 @@ describe('CheckoutComponent billing step', () => {
     fixture.detectChanges();
     expect(element.querySelector('#ruc-error')?.textContent).toContain('El RUC no es válido');
     expect(element.textContent).toContain('ACCIÓN REQUERIDA');
-    expect(button().disabled).toBe(true);
+    expect(button().disabled).toBe(false);
     fixture.componentInstance.form.controls.ruc.setValue('20987654321');
     fixture.detectChanges();
     expect(button().disabled).toBe(false);
@@ -227,7 +228,7 @@ describe('CheckoutComponent billing step', () => {
     load(); fill();
     fixture.componentInstance.form.get(field)!.setValue(value);
     submit();
-    expect(button().disabled).toBe(true);
+    expect(button().disabled).toBe(false);
     http.expectNone(checkoutUrl);
   });
 });
