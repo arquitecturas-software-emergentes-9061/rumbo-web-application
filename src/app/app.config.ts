@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { routes } from './app.routes';
 import { authInterceptor } from './iam/infrastructure/interceptors/auth.interceptor';
+import { subscriptionRestrictionInterceptor } from './subscriptions/infrastructure/interceptors/subscription-restriction.interceptor';
 import { AUTH_GATEWAY_PORT, AUTH_PORT, AUTH_STORAGE_PORT, PASSWORD_RECOVERY_PORT } from './iam/application/iam.ports';
 import { AuthService } from './iam/application/auth.service';
 import { AuthHttpGateway } from './iam/infrastructure/auth-http.gateway';
@@ -22,7 +23,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor, subscriptionRestrictionInterceptor])),
     { provide: AUTH_PORT, useExisting: AuthService },
     { provide: AUTH_GATEWAY_PORT, useExisting: AuthHttpGateway },
     { provide: AUTH_STORAGE_PORT, useExisting: BrowserAuthStorage },
