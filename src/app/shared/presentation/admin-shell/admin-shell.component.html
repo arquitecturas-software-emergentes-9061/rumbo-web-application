@@ -36,6 +36,13 @@
       </svg>
       Balizas
     </a>
+    <a routerLink="/subscriptions/plans" routerLinkActive="active" ariaCurrentWhenActive="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="14" rx="2" />
+        <path d="M3 10h18M7 15h4" />
+      </svg>
+      Planes
+    </a>
   </nav>
   <div class="sidebar-footer">
     <button type="button" (click)="signOut()" [disabled]="signingOut()">

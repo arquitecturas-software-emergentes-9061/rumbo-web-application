@@ -1,0 +1,33 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Planes</span>
+    </nav>
+    <h1>Planes de suscripción</h1>
+    <p>Los precios son mensuales en soles.</p>
+  </header>
+
+  @if (loading()) {
+    <p role="status">Cargando planes…</p>
+  } @else if (loadFailed()) {
+    <p class="alert" role="alert">{{ error() }}</p>
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (plans().length === 0) {
+    <p>No hay planes disponibles por ahora.</p>
+  } @else {
+    <div class="plans-grid">
+      @for (plan of plans(); track plan.code) {
+        <section class="card" [attr.aria-labelledby]="'plan-' + plan.code">
+          <h2 [id]="'plan-' + plan.code">{{ plan.name }}</h2>
+          <p class="price">S/ {{ plan.price.amount.toFixed(2) }}</p>
+          <p class="interval">por mes</p>
+          @if (plan.purchaseMode === 'CONTACT_SALES') {
+            <p class="contact-sales">Contactar ventas</p>
+          }
+        </section>
+      }
+    </div>
+  }
+</app-admin-shell>

@@ -14,6 +14,8 @@ import { DraftGraphService } from './planning/infrastructure/draft-graph.service
 import { FloorPlansService } from './planning/infrastructure/floor-plans.service';
 import { MapEditorApiService } from './planning/infrastructure/map-editor-api.service';
 import { SitesService } from './planning/infrastructure/sites.service';
+import { SUBSCRIPTIONS_PORT } from './subscriptions/application/subscriptions.ports';
+import { SubscriptionsService } from './subscriptions/infrastructure/subscriptions.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -28,6 +30,7 @@ export const appConfig: ApplicationConfig = {
     { provide: BEACONS_PORT, useExisting: BeaconsService },
     { provide: FLOOR_PLANS_PORT, useExisting: FloorPlansService },
     { provide: DRAFT_GRAPH_PORT, useExisting: DraftGraphService },
-    { provide: MAP_EDITOR_PORT, useExisting: MapEditorApiService }
+    { provide: MAP_EDITOR_PORT, useExisting: MapEditorApiService },
+    { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService }
   ],
 };
