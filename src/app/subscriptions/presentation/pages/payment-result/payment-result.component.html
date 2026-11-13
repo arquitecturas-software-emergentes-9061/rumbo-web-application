@@ -44,6 +44,12 @@
         }
       }
       @if (order(); as payment) {
+        @if (payment.status === 'PAID') {
+          <h2>Datos de la orden</h2>
+          <p>Organización: {{ payment.organization.name }}</p>
+          <p>Fecha de la orden: {{ payment.createdAt | date:'dd/MM/yyyy' }}</p>
+          <p>Número de orden: {{ payment.orderId }}</p>
+        }
         <p>Plan: {{ planName() }}</p>
         <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
       }
