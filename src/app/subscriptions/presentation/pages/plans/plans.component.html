@@ -19,15 +19,28 @@
   } @else {
     <div class="plans-grid">
       @for (plan of plans(); track plan.code) {
-        <section class="card" [attr.aria-labelledby]="'plan-' + plan.code">
+        <section class="card" [class.selected]="selectedPlan()?.code === plan.code" [attr.aria-labelledby]="'plan-' + plan.code">
           <h2 [id]="'plan-' + plan.code">{{ plan.name }}</h2>
           <p class="price">S/ {{ plan.price.amount.toFixed(2) }}</p>
           <p class="interval">por mes</p>
           @if (plan.purchaseMode === 'CONTACT_SALES') {
             <p class="contact-sales">Contactar ventas</p>
+          } @else if (plan.purchaseMode === 'CHECKOUT') {
+            <button type="button" class="outline" [attr.aria-pressed]="selectedPlan()?.code === plan.code" (click)="selectPlan(plan)">Elegir plan</button>
           }
         </section>
       }
     </div>
+    @if (selectedPlan(); as plan) {
+      <section class="subscription-summary" aria-labelledby="subscription-summary-title" role="status">
+        <h2 id="subscription-summary-title">Resumen de la suscripción</h2>
+        <p>{{ plan.name }}</p>
+        <p class="price">S/ {{ plan.price.amount.toFixed(2) }}</p>
+        <p>Facturación mensual</p>
+        <p>Soles (PEN)</p>
+        <p>El pago se realiza en una página segura de Stripe. Podrás revisar el resultado al volver.</p>
+        <button type="button" class="outline" (click)="clearSelection()">Cambiar plan</button>
+      </section>
+    }
   }
 </app-admin-shell>
