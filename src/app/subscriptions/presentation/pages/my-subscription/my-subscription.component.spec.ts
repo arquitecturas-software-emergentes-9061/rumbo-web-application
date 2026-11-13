@@ -12,7 +12,9 @@ describe('MySubscriptionComponent', () => {
   const url = environment.apiUrl + '/subscriptions/me';
   const subscription = {
     status: 'ACTIVE',
-    plan: { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH' },
+    plan: { code: 'BASIC', name: 'Básico', price: { amount: 39.90, currency: 'PEN' }, billingInterval: 'MONTH',
+      quota: { sites: 3, floors: 10, beacons: 50 } },
+    usage: { sites: { used: 2, limit: 3 }, floors: { used: 6, limit: 10 }, beacons: { used: 12, limit: 50 } },
     currentPeriodStart: '2026-11-12T12:00:00Z', currentPeriodEnd: '2026-12-12T12:00:00Z', daysRemaining: 30
   };
   let fixture: ComponentFixture<MySubscriptionComponent>;
@@ -47,18 +49,29 @@ describe('MySubscriptionComponent', () => {
     expect(element.textContent).toContain('S/ 39.90');
     expect(element.textContent).toContain('por mes');
     expect(element.querySelector('.badge--success')?.textContent?.trim()).toBe('Activa');
-    expect(element.textContent).toContain('Del 12/11/2026 al 12/12/2026');
+    expect(element.textContent).toContain('Vigente hasta 12/12/2026');
     expect(element.textContent).toContain(daysRemaining === 1 ? 'Queda 1 día' : 'Quedan 30 días');
-    expect(link('Cambiar de plan')?.getAttribute('href')).toBe('/subscriptions/plans');
-    expect(link('Panel')?.getAttribute('href')).toBe('/admin');
+    expect(link('Cambiar plan')?.getAttribute('href')).toBe('/subscriptions/plans');
+    expect(link('Renovar ahora')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC');
+    expect(link('Administración')?.getAttribute('href')).toBe('/admin');
+    expect(element.textContent).toContain('Al confirmar el pago, el periodo se reinicia por 1 mes desde la fecha de pago.');
+    for (const text of ['Débito automático', 'Se renueva automáticamente', 'Historial de facturas']) {
+      expect(element.textContent).not.toContain(text);
+    }
   });
 
   it('shows an expired subscription and renewal link', () => {
     http.expectOne(url).flush({ ...subscription, status: 'EXPIRED', daysRemaining: 0 });
     fixture.detectChanges();
-    expect(element.querySelector('.badge--warning')?.textContent?.trim()).toBe('Vencida');
+    expect(element.querySelector('.badge--warning')?.textContent?.trim()).toBe('VENCIDA');
     expect(element.textContent).toContain('Tu suscripción venció el 12/12/2026.');
-    expect(link('Renovar plan')?.getAttribute('href')).toBe('/subscriptions/plans');
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('Suscripción vencida — modo restringido.');
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain('No podrás registrar sedes, pisos ni balizas hasta renovar.');
+    const renewals = Array.from(element.querySelectorAll('a')).filter(item => item.textContent?.trim() === 'Renovar ahora');
+    expect(renewals.length).toBe(2);
+    renewals.forEach(item => expect(item.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC'));
+    expect(element.textContent).toContain('El uso se congela mientras la suscripción está vencida.');
+    expect(element.textContent).toContain('12 de 50');
     expect(element.textContent).not.toContain('Quedan');
   });
 
