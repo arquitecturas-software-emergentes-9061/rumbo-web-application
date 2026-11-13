@@ -72,6 +72,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'subscriptions/payment-result',
+    loadComponent: () => import('./subscriptions/presentation/pages/payment-result/payment-result.component')
+      .then(module => module.PaymentResultComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }
