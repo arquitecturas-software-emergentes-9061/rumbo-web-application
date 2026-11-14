@@ -14,7 +14,7 @@ describe('PaymentResultComponent', () => {
   const url = environment.apiUrl + '/subscriptions/payment-orders/' + id;
   const meUrl = environment.apiUrl + '/subscriptions/me';
   const active = { status: 'ACTIVE', plan: { code: 'BASIC', name: 'Básico' }, currentPeriodStart: '2026-11-12T12:00:00Z', currentPeriodEnd: '2026-12-12T12:00:00Z', daysRemaining: 30 };
-  const order = { orderId: id, planCode: 'BASIC', status: 'PAID', amount: 39.90, currency: 'PEN', createdAt: '2026-11-12T00:00:00Z' };
+  const order = { organization: { id: 'org-1', name: 'Rumbo' }, orderId: id, planCode: 'BASIC', status: 'PAID', amount: 39.90, currency: 'PEN', createdAt: '2026-11-12T00:00:00Z' };
   let fixture: ComponentFixture<PaymentResultComponent>;
   let http: HttpTestingController;
   let query: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
@@ -63,12 +63,30 @@ describe('PaymentResultComponent', () => {
     start(); respond('PAID'); activate();
     expect(element.querySelector('.success[role="status"]')?.textContent).toContain('Pago confirmado. Tu plan Básico está activo.');
     expect(element.textContent).toContain('S/ 39.90');
+    expect(element.textContent).toContain('Datos de la orden');
+    expect(element.textContent).toContain('Rumbo');
+    expect(element.textContent).toContain(id);
+    expect(element.textContent).toContain('12/11/2026');
     expect(element.textContent).toContain('Del 12/11/2026 al 12/12/2026');
     expect(element.textContent).toContain('Quedan 30 días');
     const link = (text: string) => Array.from(element.querySelectorAll('a'))
       .find(item => item.textContent?.trim() === text);
     expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
     expect(link('Ver mi suscripción')?.getAttribute('href')).toBe('/subscriptions/me');
+  });
+  it('shows paid billing details from the order', () => {
+    start();
+    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', billing: {
+      legalName: 'Clínica Ejemplo', ruc: '20491823901', fiscalAddress: 'Av. Lima 123',
+      billingEmail: 'pagos@example.test', purchaseOrder: 'PO-123'
+    } });
+    fixture.detectChanges();
+    activate();
+    const billing = element.querySelector('[aria-labelledby=billing-summary-title]')?.textContent;
+    for (const value of ['Clínica Ejemplo', '20491823901', 'Av. Lima 123', 'pagos@example.test', 'PO-123']) {
+      expect(billing).toContain(value);
+    }
+    expect(element.textContent).toContain('Fecha de pago: 12/11/2026');
   });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
@@ -171,9 +189,10 @@ describe('PaymentResultComponent', () => {
     button('Reintentar').click(); activate();
     expect(element.textContent).toContain('Tu plan Básico está activo.');
   });
-  it.each(['FAILED', 'EXPIRED', 'CANCELLED', 'PENDING'])('does not query subscriptions for %s', status => {
+  it.each(['FAILED', 'EXPIRED', 'CANCELLED', 'PENDING'])('does not query subscriptions or show order details for %s', status => {
     start(); respond(status);
     http.expectNone(meUrl);
+    expect(element.textContent).not.toContain('Datos de la orden');
     expect(element.textContent).not.toContain('está activo');
   });
   it.each(['destroy', 'parameters'])('cancels activation timers on %s', action => {
