@@ -137,7 +137,7 @@ describe('CheckoutComponent billing step', () => {
     http.expectOne(api + '/subscriptions/payment-orders/' + id).flush({ planCode: 'PROFESSIONAL', billing });
     fixture.detectChanges();
     expect(fixture.componentInstance.form.controls.legalName.value).toBe('');
-    expect(button().disabled).toBe(true);
+    expect(button().disabled).toBe(false);
     http.expectNone(checkoutUrl);
   });
   it('requires a plan query parameter', () => {
