@@ -27,13 +27,15 @@ describe('SubscriptionsService HTTP contract', () => {
   it('posts the chosen plan to create a checkout session', () => {
     const session = {
       orderId: 'order-1', planCode: 'BASIC', status: 'PENDING', amount: 39.90,
+      organization: { id: 'clinic-1', name: 'Clinic' },
       currency: 'PEN', checkoutUrl: 'https://checkout.stripe.com/c/pay/test'
     };
-    service.createCheckoutSession('BASIC').subscribe(result => expect(result).toEqual(session));
+    const billing = { legalName: 'Clínica Rumbo', ruc: '20123456789', fiscalAddress: 'Av. Lima 123', billingEmail: 'pagos@example.com' };
+    service.createCheckoutSession('BASIC', billing).subscribe(result => expect(result).toEqual(session));
     const request = http.expectOne({
       method: 'POST', url: environment.apiUrl + '/subscriptions/checkout-sessions'
     });
-    expect(request.request.body).toEqual({ planCode: 'BASIC' });
+    expect(request.request.body).toEqual({ planCode: 'BASIC', billing });
     request.flush(session, { status: 201, statusText: 'Created' });
   });
 
