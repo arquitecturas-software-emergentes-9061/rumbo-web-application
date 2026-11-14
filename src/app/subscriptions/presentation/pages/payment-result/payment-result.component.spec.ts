@@ -98,7 +98,7 @@ describe('PaymentResultComponent', () => {
   });
   it('shows paid billing details from the order', () => {
     start();
-    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', billing: {
+    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', receipt: { number: 'RA-' + id, issuedAt: '2026-11-12T12:00:00Z' }, billing: {
       legalName: 'Clínica Ejemplo', ruc: '20491823901', fiscalAddress: 'Av. Lima 123',
       billingEmail: 'pagos@example.test', purchaseOrder: 'PO-123'
     } });
@@ -113,7 +113,8 @@ describe('PaymentResultComponent', () => {
     for (const value of [id, 'Fecha de pago', '12/11/2026', 'Básico', '59.90 PEN', '20491823901']) {
       expect(transaction).toContain(value);
     }
-    expect(element.textContent).toContain('El comprobante electrónico estará disponible cuando se habilite su emisión.');
+    expect(element.textContent).toContain('Comprobante interno sin validez fiscal.');
+    expect(element.textContent).toContain('RA-' + id);
     for (const text of ['PDF', 'EMITIDO', 'Se envió una copia', 'Medio de pago', 'Tarjeta']) {
       expect(element.textContent).not.toContain(text);
     }

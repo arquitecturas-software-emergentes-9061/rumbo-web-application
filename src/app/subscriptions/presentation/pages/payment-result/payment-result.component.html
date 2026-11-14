@@ -97,7 +97,16 @@
                     </dl>
                   </section>
                 }
-                <p class="muted receipt-note">El comprobante electrónico estará disponible cuando se habilite su emisión.</p>
+                @if (order()?.receipt; as receipt) {
+                  <section aria-labelledby="receipt-title">
+                    <h3 id="receipt-title">Comprobante de pago</h3>
+                    <dl>
+                      <dt>Número de comprobante</dt><dd>{{ receipt.number }}</dd>
+                      <dt>Fecha de emisión</dt><dd>{{ receipt.issuedAt | date:'dd/MM/yyyy' }}</dd>
+                    </dl>
+                    <p class="muted receipt-note">Comprobante interno sin validez fiscal.</p>
+                  </section>
+                }
                 <div class="actions">
                   <a class="primary-action" routerLink="/admin">Ir al Panel →</a>
                   <a class="outline" routerLink="/subscriptions/me">Ver mi suscripción</a>
