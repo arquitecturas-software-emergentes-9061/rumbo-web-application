@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { Beacon } from '../../../domain/model/beacon.model';
 import { AUTH_PORT } from '../../../../iam/application/iam.ports';
-import { BEACONS_PORT } from '../../../application/planning.ports';
+import { BEACONS_PORT, FLOOR_PLANS_PORT } from '../../../application/planning.ports';
 import { SITES_PORT } from '../../../application/planning.ports';
 import { BeaconsManagementComponent } from './beacons-management.component';
 
@@ -22,6 +22,7 @@ describe('BeaconsManagementComponent', () => {
 
   const sites = { loadSites: () => of([site]), loadFloors: vi.fn() };
   const api = { load: vi.fn(), loadPlanBounds: vi.fn(), register: vi.fn(), update: vi.fn(), setActive: vi.fn() };
+  const plansApi = { original: vi.fn() };
   let component: BeaconsManagementComponent;
 
   const validForm = {
@@ -37,7 +38,8 @@ describe('BeaconsManagementComponent', () => {
     TestBed.configureTestingModule({
       imports: [BeaconsManagementComponent],
       providers: [provideRouter([]), { provide: SITES_PORT, useValue: sites },
-        { provide: BEACONS_PORT, useValue: api }, { provide: AUTH_PORT, useValue: {} }]
+        { provide: BEACONS_PORT, useValue: api }, { provide: FLOOR_PLANS_PORT, useValue: plansApi },
+        { provide: AUTH_PORT, useValue: {} }]
     });
     const fixture = TestBed.createComponent(BeaconsManagementComponent);
     component = fixture.componentInstance;
@@ -96,9 +98,49 @@ describe('BeaconsManagementComponent', () => {
     component.setCoordinate('y', '-4');
     expect(component.position()).toEqual({ x: 100, y: 0 });
     component.form.controls.active.setValue(true);
+    component.plans.update(plans => [...plans, { floorId: 'floor-1', widthUnits: 80, heightUnits: 40 }]);
+    component.form.controls.floorId.setValue('floor-1');
     component.onFloorChange();
     expect(component.position()).toBeNull();
     expect(component.form.controls.active.value).toBe(false);
+    component.setCoordinate('x', '120');
+    expect(component.position()).toEqual({ x: 80, y: 0 });
+  });
+
+  it('maps clicks to plan coordinates and clamps clicks at both borders', () => {
+    component.openEdit(placed);
+    const surface = { getBoundingClientRect: () => ({ left: 20, top: 30, width: 200, height: 120 }) };
+    component.placeOnPlan({ currentTarget: surface, clientX: 120, clientY: 90 } as unknown as MouseEvent);
+    expect(component.position()).toEqual({ x: 50, y: 30 });
+    component.placeOnPlan({ currentTarget: surface, clientX: 0, clientY: 200 } as unknown as MouseEvent);
+    expect(component.position()).toEqual({ x: 0, y: 60 });
+  });
+
+  it('updates and recovers the selected floor and position through the existing PUT contract', () => {
+    const moved = beacon({ floorId: 'floor-1', x: 80, y: 40, active: false });
+    api.update.mockReturnValue(of(moved));
+    component.plans.update(plans => [...plans, { floorId: 'floor-1', widthUnits: 80, heightUnits: 40 }]);
+    component.openEdit(placed);
+    component.form.controls.floorId.setValue('floor-1');
+    component.onFloorChange();
+    component.setCoordinate('x', '80');
+    component.setCoordinate('y', '40');
+    component.save();
+    expect(api.update).toHaveBeenCalledWith('site', 'b1', expect.objectContaining({
+      floorId: 'floor-1', x: 80, y: 40
+    }));
+    expect(component.beacons().find(item => item.id === 'b1')).toMatchObject({
+      floorId: 'floor-1', x: 80, y: 40
+    });
+  });
+
+  it('treats an out-of-plan stored point as unplaced and blocks activation', () => {
+    const invalid = beacon({ id: 'outside', x: 101, y: 5, active: false });
+    component.beacons.update(items => [...items, invalid]);
+    expect(component.placed(invalid)).toBe(false);
+    component.toggleActive(invalid);
+    expect(api.setActive).not.toHaveBeenCalled();
+    expect(component.error()).toContain('dentro del plano');
   });
 
   it('keeps the form open and flags a duplicate identifier from the server', () => {

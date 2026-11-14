@@ -2,7 +2,7 @@ import {
   nodeRemovalImpact, nodeTypeFor, EMPTY_GRAPH, EditorGraph, PlanBounds, addConnection, addNode, applyProposal, distanceMeters, moveNode, reconcileDestinations, removeConnection,
   removeNode, updateConnection, updateNodeType, upsertDestination
 } from '../domain/model/graph-model';
-import { countErrors, fromServerIssues, validateGraph } from '../domain/model/graph-validation';
+import { countErrors, fromServerIssues, validateFloorProposal, validateGraph } from '../domain/model/graph-validation';
 import { GraphHistory } from './graph-history';
 import { reconnectConnection } from '../domain/model/reconnect-connection';
 import { destinationReachability, repairOrigin } from '../domain/model/graph-reachability';
@@ -246,6 +246,18 @@ describe('WI-US11-03 graph corrections', () => {
 });
 
 describe('graph validation', () => {
+  it('allows a floor proposal to reach an access through a vertical connection', () => {
+    let graph = addNode(build(), other, 12, 10, 'VERTICAL_LINK', 'landing');
+    graph = addNode(graph, other, 25, 10, 'DESTINATION', 'room');
+    graph = upsertDestination(graph, 'room', { name: 'Triaje', type: 'SERVICE', specialty: null }, 'triaje');
+    const link = { distanceMeters: 5, weight: 5, verticalPenalty: 0, accessibility: 'UNKNOWN' as const, bidirectional: true };
+    graph.connections.push({ ...link, id: 'stairs', sourceNodeId: 'b', targetNodeId: 'landing', type: 'STAIRS' },
+      { ...link, id: 'hall', sourceNodeId: 'landing', targetNodeId: 'room', type: 'CORRIDOR' });
+    expect(validateFloorProposal(graph, other)).toEqual([]);
+    const disconnected = { ...graph, connections: graph.connections.filter(connection => connection.id !== 'stairs') };
+    expect(validateFloorProposal(disconnected, other)).toContainEqual(expect.objectContaining({ code: 'MISSING_ACCESS' }));
+  });
+
   it('accepts a connected graph with a reachable, documented destination', () => {
     expect(codes(build())).toEqual([]);
   });

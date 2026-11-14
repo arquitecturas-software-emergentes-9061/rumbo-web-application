@@ -27,6 +27,7 @@ export interface SaveBeaconRequest {
 
 export interface FloorPlanBounds {
   floorId: string;
+  planVersionId?: string;
   widthUnits: number;
   heightUnits: number;
 }

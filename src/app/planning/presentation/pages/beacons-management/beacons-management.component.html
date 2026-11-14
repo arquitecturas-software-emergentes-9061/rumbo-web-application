@@ -164,10 +164,12 @@
             <div class="plan" role="img"
               [attr.aria-label]="'Plano de ' + floor.name + ' con ' + panelPlaced().length + ' balizas ubicadas'"
               [style.aspect-ratio]="bounds.widthUnits + ' / ' + bounds.heightUnits">
+              @if (planImages()[floor.id]; as image) { <img class="plan-image" [src]="image" alt="" /> }
               @for (beacon of panelPlaced(); track beacon.id) {
-                <span class="dot" [class.off]="!beacon.active" [style.left.%]="dotLeft(beacon)" [style.top.%]="dotTop(beacon)">
+                <button type="button" class="dot" [class.off]="!beacon.active" [style.left.%]="dotLeft(beacon)" [style.top.%]="dotTop(beacon)"
+                  [attr.aria-label]="'Ubicar o mover ' + displayName(beacon)" (click)="openEdit(beacon); picking.set(true)">
                   {{ displayName(beacon) }}
-                </span>
+                </button>
               }
             </div>
           } @else {
@@ -278,6 +280,7 @@
                 aria-label="Plano del piso: haz clic para ubicar la baliza"
                 [style.aspect-ratio]="bounds.widthUnits + ' / ' + bounds.heightUnits"
                 (click)="placeOnPlan($event)">
+                @if (planImages()[form.controls.floorId.value]; as image) { <img class="plan-image" [src]="image" alt="" /> }
                 @if (position(); as point) {
                   <span class="dot selected" [style.left.%]="(point.x / bounds.widthUnits) * 100" [style.top.%]="(point.y / bounds.heightUnits) * 100">●</span>
                 }

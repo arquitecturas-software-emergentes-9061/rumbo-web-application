@@ -142,8 +142,14 @@ export function nodeTypeFor(zone: ModelProposal['zones'][number] | undefined): N
   return 'INTERSECTION';
 }
 
-/** Match only a unique, readable room label to a unique saved directory name on this floor. */
-export function reconcileDestinations(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds) {
+export interface ProposalAssignments {
+  matches: ReadonlyMap<string, string>;
+  reviewedNodes: ReadonlySet<string>;
+}
+
+/** Apply confirmed identities first, then match unique directory labels outside manual review. */
+export function reconcileDestinations(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds,
+    assignments?: ProposalAssignments) {
   const key = (name: string) => name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .trim().replace(/\s+/g, ' ').toLocaleLowerCase('es');
   const nodes = new Map(graph.nodes.map(node => [node.id, node]));
@@ -154,13 +160,21 @@ export function reconcileDestinations(graph: EditorGraph, proposal: ModelProposa
   for (const zone of candidates) byName.set(key(zone.name), [...(byName.get(key(zone.name)) ?? []), zone]);
   const savedByName = new Map<string, typeof existing>();
   for (const entry of existing) savedByName.set(key(entry.name), [...(savedByName.get(key(entry.name)) ?? []), entry]);
-  const matches = new Map<string, string>();
+  const matches = new Map(assignments?.matches);
+  const claimed = new Set(matches.values());
   const unresolved: typeof existing = [];
   const ambiguous: typeof existing = [];
   for (const entry of existing) {
+    if (claimed.has(entry.nodeId)) continue;
+    if (assignments?.reviewedNodes.has(entry.nodeId)) {
+      unresolved.push(entry);
+      continue;
+    }
     const saved = savedByName.get(key(entry.name)) ?? [];
     const proposed = byName.get(key(entry.name)) ?? [];
-    if (saved.length === 1 && proposed.length === 1) matches.set(proposed[0].id, entry.nodeId);
+    if (saved.length === 1 && proposed.length === 1 && !matches.has(proposed[0].id)) {
+      matches.set(proposed[0].id, entry.nodeId);
+    }
     else {
       unresolved.push(entry);
       if (saved.length > 1 || proposed.length > 1) ambiguous.push(entry);
@@ -174,25 +188,39 @@ export function reconcileDestinations(graph: EditorGraph, proposal: ModelProposa
  * and moves its node to the new plan. Unmatched destinations remain for explicit editor review.
  */
 export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan: PlanBounds,
-                              newId: IdFactory = randomId): EditorGraph {
+                              newId: IdFactory = randomId, assignments?: ProposalAssignments): EditorGraph {
   const floorNodes = graph.nodes.filter(node => node.floorId === plan.floorId);
-  const reconciliation = reconcileDestinations(graph, proposal, plan);
-  const removed = new Set(floorNodes.filter(node => node.type !== 'DESTINATION').map(node => node.id));
+  const reconciliation = reconcileDestinations(graph, proposal, plan, assignments);
+  const localIds = new Set(floorNodes.map(node => node.id));
+  const remoteIds = new Set(graph.nodes.filter(node => node.floorId !== plan.floorId).map(node => node.id));
+  const vertical = new Set(graph.connections.filter(link => ['STAIRS', 'RAMP', 'ELEVATOR'].includes(link.type)
+    && ((localIds.has(link.sourceNodeId) && remoteIds.has(link.targetNodeId))
+      || (localIds.has(link.targetNodeId) && remoteIds.has(link.sourceNodeId)))));
+  const protectedIds = new Set([...vertical].flatMap(link => [link.sourceNodeId, link.targetNodeId]));
   const moved = new Set(reconciliation.matches.values());
+  const removed = new Set(floorNodes.filter(node => node.type !== 'DESTINATION' && !moved.has(node.id)
+    && !protectedIds.has(node.id)).map(node => node.id));
   const kept: EditorGraph = {
     nodes: graph.nodes.filter(node => !removed.has(node.id)),
     connections: graph.connections.filter(item => !removed.has(item.sourceNodeId) && !removed.has(item.targetNodeId)
-      && !moved.has(item.sourceNodeId) && !moved.has(item.targetNodeId)),
+      && (vertical.has(item) || (!moved.has(item.sourceNodeId) && !moved.has(item.targetNodeId)))),
     destinations: graph.destinations.filter(entry => !removed.has(entry.nodeId))
   };
   const ids = new Map<string, string>();
   const created: GraphNode[] = [];
   const destinations = [...kept.destinations];
   const zoneById = new Map(proposal.zones.map(zone => [zone.id, zone]));
+  const positions = new Map<string, Pick<GraphNode, 'x' | 'y'>>();
   for (const node of proposal.nodes) {
-    const point = clampPoint(plan, node.x, node.y);
+    // Keep the validated precision of generated intersections with door axes.
+    const point = { x: Math.min(Math.max(node.x, 0), plan.widthUnits),
+      y: Math.min(Math.max(node.y, 0), plan.heightUnits) };
     const matched = reconciliation.matches.get(node.id);
-    if (matched) { ids.set(node.id, matched); continue; }
+    if (matched) {
+      ids.set(node.id, matched);
+      positions.set(matched, point);
+      continue;
+    }
     const id = newId();
     const zone = zoneById.get(node.id);
     const type = node.role === 'ENTRANCE' || node.role === 'ACCESS' ? 'ACCESS'
@@ -206,8 +234,8 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
     }
   }
   const all = [...kept.nodes.map(node => {
-    const candidate = proposal.nodes.find(item => reconciliation.matches.get(item.id) === node.id);
-    return candidate ? { ...node, planVersionId: plan.planVersionId, ...clampPoint(plan, candidate.x, candidate.y) } : node;
+    const point = positions.get(node.id);
+    return point ? { ...node, planVersionId: plan.planVersionId, ...point } : node;
   }), ...created];
   const byId = new Map(all.map(node => [node.id, node]));
   const connections = [...kept.connections];

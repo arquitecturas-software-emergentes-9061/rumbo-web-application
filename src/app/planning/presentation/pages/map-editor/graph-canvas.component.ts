@@ -3,6 +3,7 @@ import { GraphConnection, GraphNode } from '../../../domain/model/map-graph.type
 import { Destination, PlanBounds, MapWall, MapDoor } from '../../../domain/model/map-graph.types';
 import { doorSegment } from '../../../domain/model/map-geometry';
 import { Selection, Tool } from '../../../application/graph-editor-state';
+import { verticalConnectionsForFloor } from '../../../domain/model/vertical-connection';
 import { ModelProposal, polygonPath, viewBoxFor, zoneFill, zonePath } from './model-preview';
 
 interface DragState { id: string; x: number; y: number; moved: boolean }
@@ -22,6 +23,7 @@ export class GraphCanvasComponent {
   protected readonly zonePath = zonePath;
   readonly nodes = input.required<GraphNode[]>();
   readonly connections = input.required<GraphConnection[]>();
+  readonly verticalConnections = input<ReturnType<typeof verticalConnectionsForFloor>>([]);
   readonly destinations = input<Destination[]>([]);
   readonly plan = input.required<PlanBounds | null>();
   readonly tool = input<Tool>('select');
@@ -48,6 +50,7 @@ export class GraphCanvasComponent {
   readonly zonePicked = output<string>();
   readonly wallPicked = output<{ id: string; fraction: number }>();
   readonly doorPicked = output<string>();
+  readonly doorCandidatePicked = output<number>();
   readonly wallMoved = output<{ id: string; x1: number; y1: number; x2: number; y2: number }>();
   readonly doorMoved = output<{ id: string; from: number; to: number }>();
   protected readonly doorSegment = doorSegment;
@@ -132,6 +135,14 @@ export class GraphCanvasComponent {
 
   protected label(node: GraphNode): string {
     return this.destinations().find(entry => entry.nodeId === node.id)?.name ?? '';
+  }
+
+  protected showsDestinationLabel(node: GraphNode, label: string): boolean {
+    return !this.interactiveZones() || !this.backdrop()?.zones.some(zone => zone.id === node.id && zone.name === label);
+  }
+
+  protected verticalAt(nodeId: string) {
+    return this.verticalConnections().filter(item => item.local.id === nodeId);
   }
 
   protected isSelected(kind: Selection['kind'], id: string): boolean {

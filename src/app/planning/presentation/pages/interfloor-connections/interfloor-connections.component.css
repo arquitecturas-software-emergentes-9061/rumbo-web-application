@@ -30,6 +30,8 @@ small { display: block; margin-top: 3px; font-weight: 400; }
 .diagram circle { fill: var(--ink); }
 .diagram .accessible line { stroke: var(--success); }
 .diagram .accessible circle { fill: var(--success); }
+.diagram .inaccessible line { stroke: var(--error); }
+.diagram .inaccessible circle { fill: var(--error); }
 dialog { width: min(540px, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 0; color: var(--ink); border: 1px solid var(--line); border-radius: var(--panel-radius); }
 dialog::backdrop { background: rgb(17 47 72 / 46%); }
 .dialog-heading, footer { padding: 14px; background: var(--primary-soft); }

@@ -110,6 +110,22 @@ export function validateGraph(graph: EditorGraph, plans: PlanBounds[]): GraphAle
   return alerts;
 }
 
+/** A floor proposal can use access routes on connected floors. Unrelated draft floors are validated at publication. */
+export function validateFloorProposal(graph: EditorGraph, plan: PlanBounds): GraphAlert[] {
+  const localIds = graph.nodes.filter(node => node.floorId === plan.floorId).map(node => node.id);
+  if (!localIds.length) return validateGraph({ nodes: [], connections: [], destinations: [] }, [plan]);
+  const edges = adjacency(graph, false);
+  const known = new Set(edges.keys());
+  const scope = reachable(localIds, edges);
+  const nodes = graph.nodes.filter(node => scope.has(node.id));
+  // Include broken references incident to the proposal so they still fail structural validation.
+  const connections = graph.connections.filter(link =>
+    (scope.has(link.sourceNodeId) && (scope.has(link.targetNodeId) || !known.has(link.targetNodeId)))
+    || (scope.has(link.targetNodeId) && !known.has(link.sourceNodeId)));
+  const destinations = graph.destinations.filter(entry => scope.has(entry.nodeId));
+  return validateGraph({ nodes, connections, destinations }, [plan]);
+}
+
 export function fromServerIssues(issues: ServerIssue[] | undefined): GraphAlert[] {
   return (issues ?? []).map(issue => ({
     code: issue.code, severity: 'error' as const, elementType: issue.elementType,
