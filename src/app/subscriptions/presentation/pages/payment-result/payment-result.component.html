@@ -33,6 +33,7 @@
             <p role="status">Pago confirmado. Estamos activando tu plan.</p>
           }
           <a class="primary-action" routerLink="/admin">Ir al panel</a>
+          <a class="outline" routerLink="/subscriptions/me">Ver mi suscripción</a>
         } @else if (order()?.status === 'FAILED' || order()?.status === 'EXPIRED') {
           <p class="alert" role="alert">El pago no se completó.</p>
         } @else if (exhausted()) {

@@ -1,0 +1,36 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Mi suscripción</span>
+    </nav>
+    <h1>Mi suscripción</h1>
+  </header>
+  @if (loading()) {
+    <p role="status">Cargando tu suscripción…</p>
+  } @else if (error()) {
+    <p class="alert" role="alert">{{ error() }}</p>
+    <button class="outline" type="button" (click)="load()">Reintentar</button>
+  } @else if (subscription(); as current) {
+    <section class="card" aria-labelledby="plan-name">
+      <h2 id="plan-name">{{ current.plan.name }}</h2>
+      <span class="badge" [class.badge--success]="current.status === 'ACTIVE'"
+        [class.badge--warning]="current.status === 'EXPIRED'">
+        {{ current.status === 'ACTIVE' ? 'Activa' : 'Vencida' }}
+      </span>
+      <p class="price">{{ current.plan.price.currency === 'PEN' ? 'S/' : current.plan.price.currency }} {{ current.plan.price.amount | number:'1.2-2' }} <span class="interval">por mes</span></p>
+      @if (current.status === 'ACTIVE') {
+        <p>Del {{ current.currentPeriodStart | date:'dd/MM/yyyy' }} al {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+        <p>{{ current.daysRemaining === 1 ? 'Queda 1 día' : 'Quedan ' + current.daysRemaining + ' días' }}</p>
+        <a class="outline" routerLink="/subscriptions/plans">Cambiar de plan</a>
+      } @else {
+        <p>Tu suscripción venció el {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}.</p>
+        <a class="primary-action" routerLink="/subscriptions/plans">Renovar plan</a>
+      }
+    </section>
+  } @else {
+    <p>Aún no tienes una suscripción activa.</p>
+    <a class="primary-action" routerLink="/subscriptions/plans">Ver planes</a>
+  }
+</app-admin-shell>

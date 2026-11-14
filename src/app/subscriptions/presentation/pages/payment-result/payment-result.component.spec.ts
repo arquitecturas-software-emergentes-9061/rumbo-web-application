@@ -68,6 +68,7 @@ describe('PaymentResultComponent', () => {
     const link = (text: string) => Array.from(element.querySelectorAll('a'))
       .find(item => item.textContent?.trim() === text);
     expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
+    expect(link('Ver mi suscripción')?.getAttribute('href')).toBe('/subscriptions/me');
   });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
