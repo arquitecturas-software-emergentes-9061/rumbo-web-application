@@ -24,6 +24,19 @@ describe('SubscriptionsService HTTP contract', () => {
     service.loadPlans().subscribe(result => expect(result).toEqual(plans));
     http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/plans' }).flush(plans);
   });
+  it('posts the chosen plan to create a checkout session', () => {
+    const session = {
+      orderId: 'order-1', planCode: 'BASIC', status: 'PENDING', amount: 39.90,
+      currency: 'PEN', checkoutUrl: 'https://checkout.stripe.com/c/pay/test'
+    };
+    service.createCheckoutSession('BASIC').subscribe(result => expect(result).toEqual(session));
+    const request = http.expectOne({
+      method: 'POST', url: environment.apiUrl + '/subscriptions/checkout-sessions'
+    });
+    expect(request.request.body).toEqual({ planCode: 'BASIC' });
+    request.flush(session, { status: 201, statusText: 'Created' });
+  });
+
   it('gets a payment order using an encoded identifier', () => {
     service.getPaymentOrder('order/with space').subscribe();
     http.expectOne({ method: 'GET', url: environment.apiUrl + '/subscriptions/payment-orders/order%2Fwith%20space' }).flush({});

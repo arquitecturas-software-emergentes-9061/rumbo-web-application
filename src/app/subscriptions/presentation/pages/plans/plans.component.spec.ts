@@ -6,7 +6,7 @@ import { BehaviorSubject } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
 import { AUTH_PORT } from '../../../../iam/application/iam.ports';
-import { SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
+import { BROWSER_NAVIGATION, SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
 import { SubscriptionsService } from '../../../infrastructure/subscriptions.service';
 import { PlansComponent } from './plans.component';
 
@@ -21,9 +21,11 @@ describe('PlansComponent', () => {
   let http: HttpTestingController;
   let element: HTMLElement;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  const assign = vi.fn();
   let navigate: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    assign.mockReset();
     queryParams = new BehaviorSubject(convertToParamMap({}));
     TestBed.configureTestingModule({
       imports: [PlansComponent],
@@ -33,7 +35,8 @@ describe('PlansComponent', () => {
           snapshot: { get queryParamMap() { return queryParams.value; } }
         } },
         { provide: AUTH_PORT, useValue: {} },
-        { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService }]
+        { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService },
+        { provide: BROWSER_NAVIGATION, useValue: { assign } }]
     });
     navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     http = TestBed.inject(HttpTestingController);
@@ -81,7 +84,7 @@ describe('PlansComponent', () => {
       relativeTo: TestBed.inject(ActivatedRoute), queryParams: { plan: 'BASIC' },
       queryParamsHandling: 'merge', replaceUrl: true
     });
-    summary!.querySelector<HTMLButtonElement>('button')!.click();
+    Array.from(summary!.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cambiar plan')!.click();
     fixture.detectChanges();
     expect(element.querySelector('.subscription-summary, .card.selected')).toBeNull();
     expect(navigate).toHaveBeenLastCalledWith([], {
@@ -149,5 +152,78 @@ describe('PlansComponent', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('No hay planes disponibles por ahora.');
     expect(element.querySelector('.plans-grid, [role="alert"], [role="status"]')).toBeNull();
+  });
+
+  function startCheckout(): HTMLButtonElement {
+    http.expectOne(url).flush(plans);
+    fixture.detectChanges();
+    element.querySelector<HTMLButtonElement>('.plans-grid button')!.click();
+    fixture.detectChanges();
+    const button = element.querySelector<HTMLButtonElement>('.subscription-summary .primary-action')!;
+    button.click();
+    fixture.detectChanges();
+    return button;
+  }
+
+  const checkoutUrl = environment.apiUrl + '/subscriptions/checkout-sessions';
+  const session = {
+    orderId: 'order-1', planCode: 'BASIC', status: 'PENDING', amount: 39.90,
+    currency: 'PEN', checkoutUrl: 'https://checkout.stripe.com/c/pay/test'
+  };
+
+  it('disables checkout and plan changes while pending, prevents duplicates and redirects on success', () => {
+    const button = startCheckout();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('Redirigiendo a Stripe…');
+    expect(Array.from(element.querySelectorAll<HTMLButtonElement>('.plans-grid button, .subscription-summary button')).every(button => button.disabled)).toBe(true);
+    button.click();
+    fixture.componentInstance.checkout();
+    fixture.componentInstance.clearSelection();
+    fixture.componentInstance.selectPlan(plans[1]);
+    expect(fixture.componentInstance.selectedPlan()?.code).toBe('BASIC');
+    const request = http.expectOne({ method: 'POST', url: checkoutUrl });
+    expect(request.request.body).toEqual({ planCode: 'BASIC' });
+    request.flush(session, { status: 201, statusText: 'Created' });
+    expect(assign).toHaveBeenCalledExactlyOnceWith(session.checkoutUrl);
+  });
+
+  it.each([
+    [503, 'PAYMENTS_UNAVAILABLE', 'Los pagos no están disponibles por ahora. Intenta más tarde.'],
+    [502, 'PAYMENT_PROVIDER_ERROR', 'No se pudo iniciar el pago con Stripe. Intenta de nuevo.'],
+    [409, 'PLAN_REQUIRES_SALES_CONTACT', 'Este plan requiere contactar a ventas.'],
+    [404, 'PLAN_NOT_FOUND', 'El plan ya no está disponible.'],
+    [403, '', 'Tu cuenta no tiene permiso para esta operación.'],
+    [0, '', 'No hay conexión con la API. Intenta de nuevo.'],
+    [500, '', 'No se pudo iniciar el pago.'],
+    [409, 'UNKNOWN', 'No se pudo iniciar el pago.']
+  ])('shows checkout error for %s and permits retry', (status, code, message) => {
+    const button = startCheckout();
+    const request = http.expectOne(checkoutUrl);
+    if (status === 0) request.error(new ProgressEvent('error'));
+    else request.flush({ code }, { status, statusText: 'Error' });
+    fixture.detectChanges();
+    expect(element.querySelector('.subscription-summary [role="alert"]')?.textContent).toBe(message);
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe('Continuar al pago');
+    expect(Array.from(element.querySelectorAll<HTMLButtonElement>('.plans-grid button, .subscription-summary button')).every(button => !button.disabled)).toBe(true);
+    expect(assign).not.toHaveBeenCalled();
+    button.click();
+    fixture.detectChanges();
+    expect(element.querySelector('.subscription-summary [role="alert"]')).toBeNull();
+    http.expectOne(checkoutUrl).flush(session, { status: 201, statusText: 'Created' });
+    expect(assign).toHaveBeenCalledExactlyOnceWith(session.checkoutUrl);
+  });
+
+  it.each([
+    'https://example.com/pay', 'http://checkout.stripe.com/pay',
+    'https://checkout.stripe.com.evil.example/pay', 'https://checkout.stripe.com@evil.example/pay',
+    '//checkout.stripe.com/pay', 'javascript:alert(1)', 'invalid', null
+  ])('rejects unexpected checkout URL %s', checkoutUrlValue => {
+    const button = startCheckout();
+    http.expectOne(checkoutUrl).flush({ ...session, checkoutUrl: checkoutUrlValue }, { status: 201, statusText: 'Created' });
+    fixture.detectChanges();
+    expect(assign).not.toHaveBeenCalled();
+    expect(element.querySelector('.subscription-summary [role="alert"]')?.textContent).toBe('No se pudo iniciar el pago.');
+    expect(button.disabled).toBe(false);
   });
 });

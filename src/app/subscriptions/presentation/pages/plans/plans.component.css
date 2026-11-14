@@ -9,10 +9,14 @@ p { margin: 6px 0 10px; }
 .contact-sales { margin-top: 20px; color: var(--primary-hover); font-weight: 600; }
 .alert { padding: 10px 12px; color: var(--warning); background: var(--warning-bg); border: 1px solid var(--line); border-radius: var(--control-radius); font-size: .875rem; }
 .outline { min-height: 40px; padding: 8px 10px; font: inherit; font-size: .875rem; color: inherit; background: transparent; border: 1px solid var(--control-line); border-radius: var(--control-radius); cursor: pointer; }
-.outline:hover { background: var(--primary-soft); }
+.outline:hover:not(:disabled) { background: var(--primary-soft); }
 .card.selected { border-color: var(--primary); background: var(--primary-soft); }
 .subscription-summary { margin-top: 24px; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--panel-radius); }
 
 @media (max-width: 700px) {
   .plans-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.primary-action { min-height: 40px; margin-right: 8px; padding: 8px 14px; font: inherit; font-weight: 650; color: white; background: var(--primary-action); border: 1px solid transparent; border-radius: var(--control-radius); cursor: pointer; }
+.primary-action:hover:not(:disabled) { background: var(--primary-hover); }
+button:disabled { opacity: .6; cursor: not-allowed; }

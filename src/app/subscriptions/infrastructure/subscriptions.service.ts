@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { catchError, of, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { MySubscription } from '../domain/model/my-subscription.model';
-import { SubscriptionPlan } from '../domain/model/subscription-plan.model';
+import { CheckoutPlanCode, CheckoutSession, SubscriptionPlan } from '../domain/model/subscription-plan.model';
 import { SubscriptionsPort } from '../application/subscriptions.ports';
 import { PaymentOrder } from '../domain/model/payment-order.model';
 
@@ -11,6 +11,12 @@ import { PaymentOrder } from '../domain/model/payment-order.model';
 export class SubscriptionsService implements SubscriptionsPort {
   private readonly http = inject(HttpClient);
   private readonly plansUrl = environment.apiUrl + '/subscriptions/plans';
+
+  createCheckoutSession(planCode: CheckoutPlanCode) {
+    return this.http.post<CheckoutSession>(
+      environment.apiUrl + '/subscriptions/checkout-sessions', { planCode }
+    );
+  }
 
   loadPlans() {
     return this.http.get<SubscriptionPlan[]>(this.plansUrl);
