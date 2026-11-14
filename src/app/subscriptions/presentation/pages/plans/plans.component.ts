@@ -1,12 +1,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { finalize, Subscription } from 'rxjs';
-import { ContractingClinic } from '../../../domain/model/contracting-clinic.model';
-import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
+import { RouterLink } from '@angular/router';
+import { finalize } from 'rxjs';
+import { PlanQuota, SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
 import { SUBSCRIPTIONS_PORT } from '../../../application/subscriptions.ports';
 import { AdminShellComponent } from '../../../../shared/presentation/admin-shell/admin-shell.component';
+import { AUTH_PORT } from '../../../../iam/application/iam.ports';
+import { MySubscription } from '../../../domain/model/my-subscription.model';
 
 @Component({
   selector: 'app-plans',
@@ -15,92 +16,59 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
   styleUrl: './plans.component.css'
 })
 export class PlansComponent implements OnInit {
+  private readonly auth = inject(AUTH_PORT);
+  readonly subscription = signal<MySubscription | null>(null);
+  readonly subscriptionLoading = signal(false);
+  readonly subscriptionFailed = signal(false);
+
+  quotaText(quota: PlanQuota): string {
+    if (Object.values(quota).every(value => value === null)) return 'Sedes, pisos y balizas ilimitados';
+    return [
+      quota.sites === null ? 'Sedes ilimitadas' : quota.sites + (quota.sites === 1 ? ' sede' : ' sedes'),
+      quota.floors === null ? 'Pisos ilimitados' : quota.floors + (quota.floors === 1 ? ' piso' : ' pisos'),
+      quota.beacons === null ? 'Balizas ilimitadas' : quota.beacons + (quota.beacons === 1 ? ' baliza' : ' balizas')
+    ].join(' · ');
+  }
+
+  blocked(plan: SubscriptionPlan): boolean {
+    const subscription = this.subscription();
+    const current = this.plans().findIndex(item => item.code === subscription?.plan.code);
+    return !!subscription && this.plans().indexOf(plan) < current &&
+      (['sites', 'floors', 'beacons'] as const).some(key =>
+        plan.quota[key] !== null && subscription.usage[key].used > plan.quota[key]!);
+  }
+
+  current(plan: SubscriptionPlan): boolean {
+    return this.subscription()?.plan.code === plan.code && this.subscription()?.status === 'ACTIVE';
+  }
+
+  action(plan: SubscriptionPlan): string {
+    const subscription = this.subscription();
+    const current = this.plans().findIndex(item => item.code === subscription?.plan.code);
+    if (!subscription || current < 0) return 'Elegir plan';
+    if (subscription.plan.code === plan.code) return subscription.status === 'ACTIVE' ? 'Plan actual' : 'Renovar plan ' + plan.name;
+    return this.plans().indexOf(plan) > current ? 'Mejorar plan' : 'Cambiar a ' + plan.name;
+  }
   private readonly service = inject(SUBSCRIPTIONS_PORT);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private catalogLoaded = false;
-  private organizationRequest?: Subscription;
-
-  readonly organization = signal<ContractingClinic | null>(null);
-  readonly organizationLoading = signal(false);
-  readonly organizationLoadFailed = signal(false);
-
-  readonly checkingOut = signal(false);
-  readonly checkoutError = signal<string | null>(null);
   readonly loading = signal(true);
   readonly loadFailed = signal(false);
   readonly error = signal<string | null>(null);
   readonly plans = signal<SubscriptionPlan[]>([]);
-  readonly selectedPlan = signal<SubscriptionPlan | null>(null);
-
-  ngOnInit(): void {
-    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      if (this.catalogLoaded) this.restoreSelection();
-    });
-    this.reload();
-  }
-
-  selectPlan(plan: SubscriptionPlan): void {
-    if (this.checkingOut() || plan.purchaseMode !== 'CHECKOUT') return;
-    this.checkoutError.set(null);
-    this.selectedPlan.set(plan);
-    this.loadOrganization();
-    this.updatePlanQuery(plan.code);
-  }
-
-  clearSelection(): void {
-    if (this.checkingOut()) return;
-    this.checkoutError.set(null);
-    this.selectedPlan.set(null);
-    this.organizationRequest?.unsubscribe();
-    this.updatePlanQuery(null);
-  }
-
-  checkout(): void {
-    const plan = this.selectedPlan();
-    if (this.checkingOut() || this.organizationLoading() || this.organizationLoadFailed() || !this.organization() || !plan || plan.purchaseMode !== 'CHECKOUT' ||
-      (plan.code !== 'BASIC' && plan.code !== 'PROFESSIONAL')) return;
-    void this.router.navigate(['/subscriptions/checkout'], { queryParams: { plan: plan.code } });
-  }
-
-  private restoreSelection(): void {
-    const code = this.route.snapshot.queryParamMap.get('plan');
-    const plan = this.plans().find(plan => plan.code === code && plan.purchaseMode === 'CHECKOUT');
-    const changed = this.selectedPlan()?.code !== plan?.code;
-    this.selectedPlan.set(plan ?? null);
-    if (changed) {
-      this.organizationRequest?.unsubscribe();
-      if (plan) this.loadOrganization();
-    }
-    if (code !== null && !plan) this.updatePlanQuery(null);
-  }
-
-  loadOrganization(): void {
-    if (!this.selectedPlan() || this.checkingOut()) return;
-    this.organizationRequest?.unsubscribe();
-    this.organization.set(null);
-    this.organizationLoading.set(true);
-    this.organizationLoadFailed.set(false);
-    this.organizationRequest = this.service.getContractingClinic().pipe(
-      takeUntilDestroyed(this.destroyRef),
-      finalize(() => this.organizationLoading.set(false))
-    ).subscribe({
-      next: organization => this.organization.set(organization),
-      error: () => this.organizationLoadFailed.set(true)
-    });
-  }
-
-  private updatePlanQuery(plan: string | null): void {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { plan },
-      queryParamsHandling: 'merge',
-      replaceUrl: true
-    });
-  }
+  ngOnInit(): void { this.reload(); }
 
   reload(): void {
+    if (this.auth.isAuthenticated()) {
+      this.subscriptionLoading.set(true);
+      this.subscriptionFailed.set(false);
+      this.service.getMySubscription().pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.subscriptionLoading.set(false))
+      ).subscribe({
+        next: subscription => this.subscription.set(subscription),
+        error: () => this.subscriptionFailed.set(true)
+      });
+    }
     this.loading.set(true);
     this.loadFailed.set(false);
     this.error.set(null);
@@ -110,8 +78,6 @@ export class PlansComponent implements OnInit {
     ).subscribe({
       next: plans => {
         this.plans.set(plans);
-        this.catalogLoaded = true;
-        this.restoreSelection();
       },
       error: (error: HttpErrorResponse) => {
         this.loadFailed.set(true);

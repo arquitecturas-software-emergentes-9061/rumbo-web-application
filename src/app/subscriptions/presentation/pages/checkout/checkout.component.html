@@ -13,6 +13,8 @@
     <p class="alert" role="alert">No se pudieron cargar los planes.</p>
     <button type="button" class="outline" (click)="reload()">Reintentar</button>
   } @else if (plan(); as selected) {
+    @if (prefillLoading()) { <p role="status">Recuperando datos de facturación…</p> }
+    @if (prefillError()) { <p class="alert" role="alert">{{ prefillError() }}</p> }
     @if (incomplete()) {
       <div class="alert" role="alert">
         <strong>ACCIÓN REQUERIDA</strong>
@@ -36,7 +38,7 @@
                   [attr.aria-required]="!field.optional"
                   [attr.aria-invalid]="!!fieldError(field.key)"
                   [attr.aria-describedby]="field.key + '-help' + (fieldError(field.key) ? ' ' + field.key + '-error' : '')"
-                  [placeholder]="field.help" [readOnly]="checkingOut()">
+                  [placeholder]="field.help" [readOnly]="checkingOut() || prefillLoading()">
                 <small [id]="field.key + '-help'" class="muted">{{ field.help }}</small>
                 @if (field.optional) { <small class="muted">Referencia interna opcional para tu área de pagos.</small> }
                 @if (fieldError(field.key); as message) {
@@ -49,7 +51,7 @@
         <div class="actions">
           <a routerLink="/subscriptions/plans" [queryParams]="{ plan: selected.code }">← Volver a la selección de plan</a>
           <button type="submit" class="primary-action"
-            [disabled]="checkingOut() || organizationLoading() || organizationLoadFailed() || !organization()">
+            [disabled]="checkingOut() || prefillLoading() || organizationLoading() || organizationLoadFailed() || !organization()">
             {{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago →' }}
           </button>
         </div>

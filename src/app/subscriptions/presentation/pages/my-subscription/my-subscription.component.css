@@ -1,12 +1,22 @@
 .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; font-size: .8rem; color: var(--muted); }
 .breadcrumb a { color: var(--primary-hover); text-underline-offset: 3px; }
-.plans-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.checkout-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 .card { min-width: 0; padding: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--panel-radius); overflow-wrap: anywhere; }
 h2 { margin: 0 0 16px; font-size: 1.06rem; }
 p { margin: 6px 0 10px; }
 .price { color: var(--primary); font-size: 1.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .interval { color: var(--muted); font-size: .9rem; }
-.contact-sales { margin-top: 20px; color: var(--primary-hover); font-weight: 600; }
+.muted { color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; margin-top: 24px; }
+.actions > div { flex: 1; min-width: 0; }
+.renewal-note { font-size: .8rem; line-height: 1.5; }
+.usage-item { margin: 24px 0; }
+.usage-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.usage-track { height: 8px; background: var(--primary-soft); border-radius: var(--control-radius); overflow: hidden; }
+.usage-fill { height: 100%; background: var(--primary-action); }
+.alert { margin-bottom: 24px; }
+@media (max-width: 900px) { .checkout-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .actions { flex-direction: column; } }
 .alert { padding: 10px 12px; color: var(--warning); background: var(--warning-bg); border: 1px solid var(--line); border-radius: var(--control-radius); font-size: .875rem; }
 .outline { min-height: 40px; padding: 8px 10px; font: inherit; font-size: .875rem; color: inherit; background: transparent; border: 1px solid var(--control-line); border-radius: var(--control-radius); cursor: pointer; }
 .outline:hover:not(:disabled) { background: var(--primary-soft); }

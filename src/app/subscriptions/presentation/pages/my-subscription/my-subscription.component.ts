@@ -19,6 +19,15 @@ export class MySubscriptionComponent implements OnInit {
   readonly subscription = signal<MySubscription | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+  readonly usageItems = [
+    { key: 'sites', label: 'Sedes' },
+    { key: 'floors', label: 'Pisos' },
+    { key: 'beacons', label: 'Balizas' }
+  ] as const;
+
+  usagePercentage(used: number, limit: number): number {
+    return limit > 0 ? Math.min(100, Math.max(0, used / limit * 100)) : used > 0 ? 100 : 0;
+  }
 
   ngOnInit(): void { this.load(); }
 

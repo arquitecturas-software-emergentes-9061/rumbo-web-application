@@ -3,7 +3,7 @@ import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { Subscription, finalize } from 'rxjs';
 import { BillingDetails } from '../../../domain/model/billing-details.model';
 import { ContractingClinic } from '../../../domain/model/contracting-clinic.model';
 import { SubscriptionPlan } from '../../../domain/model/subscription-plan.model';
@@ -39,6 +39,9 @@ export class CheckoutComponent implements OnInit {
   readonly organizationLoading = signal(true);
   readonly organizationLoadFailed = signal(false);
   readonly checkingOut = signal(false);
+  readonly prefillLoading = signal(false);
+  readonly prefillError = signal<string | null>(null);
+  private prefillRequest?: Subscription;
   readonly incomplete = signal(false);
   readonly error = signal<string | null>(null);
   readonly form = this.fb.group({
@@ -66,7 +69,30 @@ export class CheckoutComponent implements OnInit {
         }
       });
     }
-    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.selectPlan());
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      this.selectPlan();
+      this.prefillRequest?.unsubscribe();
+      this.prefillLoading.set(false);
+      this.prefillError.set(null);
+      this.form.reset();
+      this.incomplete.set(false);
+      const orderId = params.get('orderId');
+      if (!orderId) return;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId)) {
+        this.prefillError.set('No se pudieron recuperar los datos de facturación. Complétalos para continuar.');
+        return;
+      }
+      this.prefillLoading.set(true);
+      this.prefillRequest = this.service.getPaymentOrder(orderId).pipe(takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.prefillLoading.set(false))).subscribe({
+        next: order => {
+          if (order.planCode === params.get('plan') && order.billing) {
+            this.form.patchValue({ ...order.billing, purchaseOrder: order.billing.purchaseOrder ?? '' });
+          } else this.prefillError.set('No se pudieron recuperar los datos de facturación. Complétalos para continuar.');
+        },
+        error: () => this.prefillError.set('No se pudieron recuperar los datos de facturación. Complétalos para continuar.')
+      });
+    });
     this.reload();
     this.loadOrganization();
   }
@@ -105,7 +131,7 @@ export class CheckoutComponent implements OnInit {
     return 'Ingresa al menos ' + (field === 'legalName' ? 2 : 5) + ' caracteres';
   }
   checkout(): void {
-    if (this.checkingOut()) return;
+    if (this.checkingOut() || this.prefillLoading()) return;
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.incomplete.set(true);
