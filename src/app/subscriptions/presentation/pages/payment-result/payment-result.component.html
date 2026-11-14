@@ -5,9 +5,26 @@
       <a routerLink="/subscriptions/plans">Planes</a><span aria-hidden="true">›</span>
       <span aria-current="page">Resultado del pago</span>
     </nav>
-    <h1>Resultado del pago</h1>
+    @if (order()?.status === 'PAID' && !unsuccessful()) {
+      <div class="heading-row">
+        <h1>Pago / Pedido #{{ order()!.orderId.slice(0, 8) }}</h1>
+        <span>Transacción cifrada</span>
+      </div>
+    } @else {
+      <h1>Resultado del pago</h1>
+    }
   </header>
-  <section class="result">
+  @if (unsuccessful()) {
+    <ol class="steps" aria-label="Pasos del pago">
+      <li>1 Plan</li><li>2 Datos de facturación</li><li aria-current="step">3 Pago (actual)</li>
+    </ol>
+  }
+  @if (order()?.status === 'PAID' && !unsuccessful()) {
+    <ol class="steps completed-steps" aria-label="Pasos del pago">
+      <li>✓ 1 Plan seleccionado</li><li>✓ 2 Datos de facturación</li><li aria-current="step">✓ 3 Pago completado</li>
+    </ol>
+  }
+  <section class="result" [class.paid-result]="order()?.status === 'PAID' && !unsuccessful()">
     @if (notFound()) {
       <p class="alert" role="alert">No encontramos la orden de pago.</p>
     } @else {
@@ -15,27 +32,118 @@
         <p class="alert" role="alert">{{ error() }}</p>
         <button type="button" class="outline" (click)="retry()">Reintentar</button>
       }
-      @if (cancelled() || order()?.status === 'CANCELLED') {
-        <p role="status">Pago cancelado. No se realizó ningún cargo.</p>
+      @if (unsuccessful() && !error()) {
+        <div class="alert failure-banner" role="alert">{{ failureTitle() }} — Tu suscripción no cambió. Prueba con otro medio de pago o contacta a tu banco.</div>
+        <div class="checkout-grid">
+          <section class="card" aria-labelledby="failure-title">
+            <span class="failure-tag">{{ cancelled() || order()?.status === 'CANCELLED' ? 'CANCELADA' : order()?.status === 'EXPIRED' ? 'EXPIRADA' : 'FALLIDA' }}</span>
+            <h2 id="failure-title">Transacción no realizada</h2>
+            <p>Revisa los datos de facturación antes de continuar a Stripe Checkout.</p>
+            @if (retryPlan(); as selected) {
+              <div class="actions">
+                <a routerLink="/subscriptions/checkout" [queryParams]="{ plan: selected.code, orderId: order()?.orderId }">← Volver a datos de facturación</a>
+                <a class="primary-action retry-payment" routerLink="/subscriptions/checkout"
+                  [queryParams]="{ plan: selected.code, orderId: order()?.orderId }">Reintentar pago · {{ selected.price.currency === 'PEN' ? 'S/' : selected.price.currency }} {{ selected.price.amount.toFixed(2) }}</a>
+              </div>
+            } @else {
+              <p>No se pudo obtener un plan disponible para reintentar. Vuelve a la selección de planes.</p>
+            }
+          </section>
+          <aside class="card" aria-labelledby="retry-summary-title">
+            <h2 id="retry-summary-title">Resumen del pedido</h2>
+            <h3>{{ planName() }}</h3>
+            @if (retryPlan(); as selected) {
+              <span class="cycle">{{ selected.billingInterval === 'MONTH' ? 'Mensual' : selected.billingInterval }}</span>
+              <p class="price">{{ selected.price.currency === 'PEN' ? 'S/' : selected.price.currency }} {{ selected.price.amount.toFixed(2) }}</p>
+              <p>Moneda: {{ selected.price.currency }}</p>
+              <p>Pago único con Stripe Checkout.</p>
+            }
+          </aside>
+        </div>
       } @else if (!error()) {
         @if (order()?.status === 'PAID') {
-          @if (activeSubscription(); as current) {
-            <p class="success" role="status">Pago confirmado. Tu plan {{ planName() }} está activo.</p>
-            <p>Del {{ current.currentPeriodStart | date:'dd/MM/yyyy' }} al {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
-            <p>{{ current.daysRemaining === 1 ? 'Queda 1 día' : 'Quedan ' + current.daysRemaining + ' días' }}</p>
-          } @else if (activationError()) {
-            <p class="alert" role="alert">{{ activationError() }}</p>
-            <button type="button" class="outline" (click)="retryActivation()">Reintentar</button>
-          } @else if (activationExhausted()) {
-            <p role="status">La activación está tardando. Revisa Mi suscripción más tarde.</p>
-            <button type="button" class="outline" (click)="retryActivation()">Volver a consultar</button>
-          } @else {
-            <p role="status">Pago confirmado. Estamos activando tu plan.</p>
-          }
-          <a class="primary-action" routerLink="/admin">Ir al panel</a>
-          <a class="outline" routerLink="/subscriptions/me">Ver mi suscripción</a>
-        } @else if (order()?.status === 'FAILED' || order()?.status === 'EXPIRED') {
-          <p class="alert" role="alert">El pago no se completó.</p>
+          <div class="checkout-grid">
+            <div>
+              <section class="card" aria-labelledby="payment-title">
+                <span class="payment-check" aria-hidden="true">✓</span>
+                <h2 id="payment-title">Pago exitoso</h2>
+                @if (activeSubscription(); as current) {
+                  <p class="success" role="status">Pago confirmado. Tu plan {{ planName() }} está activo.</p>
+                  <p>Del {{ current.currentPeriodStart | date:'dd/MM/yyyy' }} al {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+                  <p>{{ current.daysRemaining === 1 ? 'Queda 1 día' : 'Quedan ' + current.daysRemaining + ' días' }}</p>
+                } @else if (activationError()) {
+                  <p class="alert" role="alert">{{ activationError() }}</p>
+                  <button type="button" class="outline" (click)="retryActivation()">Reintentar</button>
+                } @else if (activationExhausted()) {
+                  <p role="status">La activación está tardando. Revisa Mi suscripción más tarde.</p>
+                  <button type="button" class="outline" (click)="retryActivation()">Volver a consultar</button>
+                } @else {
+                  <p role="status">Pago confirmado. Estamos activando tu plan.</p>
+                }
+                @if (order(); as payment) {
+                  <section class="transaction" aria-labelledby="transaction-title">
+                    <h3 id="transaction-title">Datos de la transacción</h3>
+                    <dl>
+                      <dt>Número de orden</dt><dd>{{ payment.orderId }}</dd>
+                      <dt>{{ payment.paidAt ? 'Fecha de pago' : 'Fecha de la orden' }}</dt>
+                      <dd>{{ (payment.paidAt || payment.createdAt) | date:'dd/MM/yyyy' }}</dd>
+                      <dt>Plan</dt><dd>{{ planName() }}</dd>
+                      @if (selectedPlan(); as selected) {
+                        <dt>Importe del catálogo</dt><dd>{{ selected.price.amount.toFixed(2) }} {{ selected.price.currency }}</dd>
+                      }
+                      @if (payment.billing; as billing) {
+                        <dt>RUC de facturación</dt><dd>{{ billing.ruc }}</dd>
+                      }
+                    </dl>
+                  </section>
+                }
+                @if (order()?.receipt; as receipt) {
+                  <section aria-labelledby="receipt-title">
+                    <h3 id="receipt-title">Comprobante de pago</h3>
+                    <dl>
+                      <dt>Número de comprobante</dt><dd>{{ receipt.number }}</dd>
+                      <dt>Fecha de emisión</dt><dd>{{ receipt.issuedAt | date:'dd/MM/yyyy' }}</dd>
+                    </dl>
+                    <p class="muted receipt-note">Comprobante interno sin validez fiscal.</p>
+                  </section>
+                }
+                <div class="actions">
+                  <a class="primary-action" routerLink="/admin">Ir al Panel →</a>
+                  <a class="outline" routerLink="/subscriptions/me">Ver mi suscripción</a>
+                </div>
+              </section>
+              <section class="next-steps" aria-labelledby="next-steps-title">
+                <h2 id="next-steps-title">Próximos pasos</h2>
+                <a class="card next-step" routerLink="/planning/sites">Registrar sedes →</a>
+              </section>
+            </div>
+            <aside>
+              <section class="card" aria-labelledby="paid-summary-title">
+                <div class="heading-row"><h2 id="paid-summary-title">Resumen del pedido</h2><span class="cycle">PAGADO</span></div>
+                <h3>{{ planName() }}</h3>
+                <p>Total cobrado</p>
+                <p class="price">{{ order()!.currency === 'PEN' ? 'S/' : order()!.currency }} {{ order()!.amount.toFixed(2) }} {{ order()!.currency }}</p>
+                @if (activeSubscription(); as current) {
+                  <p class="success activation-confirmed">Suscripción activada — Vigente hasta {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+                }
+              </section>
+              @if (order()?.billing; as billing) {
+                <section class="card client-card" aria-labelledby="billing-summary-title">
+                  <h2 id="billing-summary-title">CLIENTE</h2>
+                  <dl>
+                    <dt>Razón social</dt><dd>{{ billing.legalName }}</dd>
+                    <dt>RUC</dt><dd>{{ billing.ruc }}</dd>
+                    <dt>Dirección de facturación</dt><dd>{{ billing.fiscalAddress }}</dd>
+                    <dt>Correo de facturación</dt><dd>{{ billing.billingEmail }}</dd>
+                    @if (billing.purchaseOrder; as purchaseOrder) {
+                      <dt>Orden de compra</dt><dd>{{ purchaseOrder }}</dd>
+                    }
+                  </dl>
+                </section>
+              }
+              <p class="support">¿Preguntas sobre esta factura? <a href="mailto:soporte@rumbo.pe">Soporte</a></p>
+            </aside>
+          </div>
         } @else if (exhausted()) {
           <p role="status">Tu pago aún se está confirmando. Revisa el estado más tarde.</p>
           <button type="button" class="outline" (click)="retry()">Volver a consultar</button>
@@ -44,31 +152,10 @@
         }
       }
       @if (order(); as payment) {
-        @if (payment.status === 'PAID') {
-          <h2>Datos de la orden</h2>
-          <p>Organización: {{ payment.organization.name }}</p>
-          <p>Fecha de la orden: {{ payment.createdAt | date:'dd/MM/yyyy' }}</p>
-          <p>Número de orden: {{ payment.orderId }}</p>
-          @if (payment.paidAt; as paidAt) {
-            <p>Fecha de pago: {{ paidAt | date:'dd/MM/yyyy' }}</p>
-          }
-          @if (payment.billing; as billing) {
-            <section aria-labelledby="billing-summary-title">
-              <h3 id="billing-summary-title">Datos de facturación</h3>
-              <dl>
-                <dt>Razón social</dt><dd>{{ billing.legalName }}</dd>
-                <dt>RUC</dt><dd>{{ billing.ruc }}</dd>
-                <dt>Dirección de facturación</dt><dd>{{ billing.fiscalAddress }}</dd>
-                <dt>Correo de facturación</dt><dd>{{ billing.billingEmail }}</dd>
-                @if (billing.purchaseOrder; as purchaseOrder) {
-                  <dt>Orden de compra</dt><dd>{{ purchaseOrder }}</dd>
-                }
-              </dl>
-            </section>
-          }
+        @if (!unsuccessful() && payment.status !== 'PAID') {
+          <p>Plan: {{ planName() }}</p>
+          <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
         }
-        <p>Plan: {{ planName() }}</p>
-        <p class="price">{{ payment.currency === 'PEN' ? 'S/' : payment.currency }} {{ payment.amount.toFixed(2) }}</p>
       }
     }
     @if (notFound() || cancelled() || order()?.status !== 'PAID' || error()) {

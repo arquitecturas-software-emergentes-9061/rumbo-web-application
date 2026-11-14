@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import { AUTH_PORT } from '../../../../iam/application/iam.ports';
@@ -45,7 +45,7 @@ describe('PaymentResultComponent', () => {
     if (orderId === id) {
       const catalog = http.expectOne(environment.apiUrl + '/subscriptions/plans');
       if (catalogFails) catalog.flush({}, { status: 500, statusText: 'Error' });
-      else catalog.flush([{ code: 'BASIC', name: 'Básico' }]);
+      else catalog.flush([{ code: 'BASIC', name: 'Básico', purchaseMode: 'CHECKOUT', billingInterval: 'MONTH', price: { amount: 59.90, currency: 'PEN' } }]);
     }
   }
   function respond(status: string): void {
@@ -59,34 +59,83 @@ describe('PaymentResultComponent', () => {
   function button(text: string): HTMLButtonElement {
     return Array.from(element.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.trim() === text)!;
   }
+  it('routes a failed payment to the billing step without querying activation', () => {
+    start();
+    respond('FAILED');
+    http.expectNone(meUrl);
+    expect(element.textContent).toContain('Tu suscripción no cambió');
+    const back = Array.from(element.querySelectorAll('a'))
+      .find(link => link.textContent?.includes('Volver a datos de facturación'));
+    expect(back?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+    expect(element.querySelector('.success')).toBeNull();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    element.querySelector<HTMLAnchorElement>('.retry-payment')!.click();
+    expect(router.serializeUrl(navigate.mock.calls[0][0] as import('@angular/router').UrlTree))
+      .toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+  });
   it('announces paid success with the plan, amount and panel link', () => {
     start(); respond('PAID'); activate();
     expect(element.querySelector('.success[role="status"]')?.textContent).toContain('Pago confirmado. Tu plan Básico está activo.');
     expect(element.textContent).toContain('S/ 39.90');
-    expect(element.textContent).toContain('Datos de la orden');
-    expect(element.textContent).toContain('Rumbo');
+    expect(element.textContent).toContain('Datos de la transacción');
+    expect(element.textContent).toContain('59.90 PEN');
+    expect(element.textContent).toContain('Total cobrado');
+    expect(element.textContent).toContain('PAGADO');
+    expect(element.textContent).toContain('Pago / Pedido #12345678');
+    expect(element.textContent).toContain('Pago completado');
+    expect(element.querySelector('.activation-confirmed')?.textContent).toContain('Suscripción activada — Vigente hasta 12/12/2026');
     expect(element.textContent).toContain(id);
     expect(element.textContent).toContain('12/11/2026');
     expect(element.textContent).toContain('Del 12/11/2026 al 12/12/2026');
     expect(element.textContent).toContain('Quedan 30 días');
     const link = (text: string) => Array.from(element.querySelectorAll('a'))
       .find(item => item.textContent?.trim() === text);
-    expect(link('Ir al panel')?.getAttribute('href')).toBe('/admin');
+    expect(link('Ir al Panel →')?.getAttribute('href')).toBe('/admin');
     expect(link('Ver mi suscripción')?.getAttribute('href')).toBe('/subscriptions/me');
+    expect(link('Registrar sedes →')?.getAttribute('href')).toBe('/planning/sites');
+    expect(element.querySelectorAll('.next-step').length).toBe(1);
   });
   it('shows paid billing details from the order', () => {
     start();
-    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', billing: {
+    http.expectOne(url).flush({ ...order, paidAt: '2026-11-12T12:00:00Z', receipt: { number: 'RA-' + id, issuedAt: '2026-11-12T12:00:00Z' }, billing: {
       legalName: 'Clínica Ejemplo', ruc: '20491823901', fiscalAddress: 'Av. Lima 123',
       billingEmail: 'pagos@example.test', purchaseOrder: 'PO-123'
     } });
     fixture.detectChanges();
     activate();
     const billing = element.querySelector('[aria-labelledby=billing-summary-title]')?.textContent;
+    expect(billing).toContain('CLIENTE');
     for (const value of ['Clínica Ejemplo', '20491823901', 'Av. Lima 123', 'pagos@example.test', 'PO-123']) {
       expect(billing).toContain(value);
     }
-    expect(element.textContent).toContain('Fecha de pago: 12/11/2026');
+    const transaction = element.querySelector('.transaction')?.textContent;
+    for (const value of [id, 'Fecha de pago', '12/11/2026', 'Básico', '59.90 PEN', '20491823901']) {
+      expect(transaction).toContain(value);
+    }
+    expect(element.textContent).toContain('Comprobante interno sin validez fiscal.');
+    expect(element.textContent).toContain('RA-' + id);
+    for (const text of ['PDF', 'EMITIDO', 'Se envió una copia', 'Medio de pago', 'Tarjeta']) {
+      expect(element.textContent).not.toContain(text);
+    }
+  });
+  it('labels the creation date when paidAt is null', () => {
+    start();
+    http.expectOne(url).flush({ ...order, paidAt: null, createdAt: '2026-11-10T12:00:00Z' });
+    activate();
+    const transaction = element.querySelector('.transaction')?.textContent;
+    expect(transaction).toContain('Fecha de la orden');
+    expect(transaction).toContain('10/11/2026');
+    expect(transaction).not.toContain('Fecha de pago');
+  });
+  it('does not show active copy or a green activation box while confirmation is pending', () => {
+    start(); respond('PAID');
+    expect(element.textContent).not.toContain('está activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
+    expect(element.querySelector('.success')).toBeNull();
+    expect(element.textContent).not.toContain('PDF');
+    expect(element.textContent).not.toContain('EMITIDO');
+    activate();
   });
   it('polls after two seconds and stops when paid on the second attempt', () => {
     start(); respond('PENDING');
@@ -106,17 +155,30 @@ describe('PaymentResultComponent', () => {
   });
   it.each(['success', 'cancelled'])('shows cancellation for return status %s', status => {
     start(status); respond('CANCELLED');
-    expect(element.textContent).toContain('Pago cancelado. No se realizó ningún cargo.');
+    expect(element.textContent).toContain('Pago cancelado — Tu suscripción no cambió.');
     expect(element.textContent).toContain('Básico');
   });
   it('keeps a cancelled return cancelled even if the order is pending', () => {
     start('cancelled'); respond('PENDING');
     vi.advanceTimersByTime(10000); http.expectNone(url);
-    expect(element.textContent).toContain('Pago cancelado. No se realizó ningún cargo.');
+    expect(element.textContent).toContain('Pago cancelado — Tu suscripción no cambió.');
   });
-  it.each(['FAILED', 'EXPIRED'])('shows an alert for %s', status => {
+  it.each([
+    ['FAILED', 'Pago rechazado', 'FALLIDA'],
+    ['EXPIRED', 'La sesión de pago expiró', 'EXPIRADA'],
+    ['CANCELLED', 'Pago cancelado', 'CANCELADA']
+  ])('shows WA15C and a catalog-priced retry for %s without activation', (status, title, tag) => {
     start(); respond(status);
-    expect(element.querySelector('[role="alert"]')?.textContent).toBe('El pago no se completó.');
+    expect(element.querySelector('[role="alert"]')?.textContent).toBe(title + ' — Tu suscripción no cambió. Prueba con otro medio de pago o contacta a tu banco.');
+    expect(element.querySelector('.card h2')?.textContent).toBe('Transacción no realizada');
+    expect(element.querySelector('.failure-tag')?.textContent).toBe(tag);
+    expect(element.querySelector('.retry-payment')?.textContent).toBe('Reintentar pago · S/ 59.90');
+    expect(element.querySelector('.retry-payment')?.getAttribute('href')).toBe('/subscriptions/checkout?plan=BASIC&orderId=' + id);
+    expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
+    http.expectNone(meUrl);
+    vi.advanceTimersByTime(10000);
+    http.expectNone(url);
   });
   it.each(['', 'invalid'])('rejects missing or invalid order %s without requests', orderId => {
     start('success', orderId);
@@ -164,6 +226,7 @@ describe('PaymentResultComponent', () => {
     start(); respond('PAID'); activate(subscription);
     expect(element.textContent).toContain('Estamos activando tu plan.');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
   });
   it('exhausts five activation attempts and retries only the subscription by button text', () => {
     start(); respond('PAID');
@@ -174,6 +237,7 @@ describe('PaymentResultComponent', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('La activación está tardando. Revisa Mi suscripción más tarde.');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
     vi.advanceTimersByTime(10000); http.expectNone(meUrl);
     button('Volver a consultar').click();
     http.expectNone(url); activate({ ...active, daysRemaining: 1 });
@@ -185,6 +249,7 @@ describe('PaymentResultComponent', () => {
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')?.textContent).toContain('No se pudo confirmar la activación');
     expect(element.textContent).not.toContain('activo');
+    expect(element.querySelector('.activation-confirmed')).toBeNull();
     vi.advanceTimersByTime(10000); http.expectNone(meUrl);
     button('Reintentar').click(); activate();
     expect(element.textContent).toContain('Tu plan Básico está activo.');
@@ -192,7 +257,7 @@ describe('PaymentResultComponent', () => {
   it.each(['FAILED', 'EXPIRED', 'CANCELLED', 'PENDING'])('does not query subscriptions or show order details for %s', status => {
     start(); respond(status);
     http.expectNone(meUrl);
-    expect(element.textContent).not.toContain('Datos de la orden');
+    expect(element.textContent).not.toContain('Datos de la transacción');
     expect(element.textContent).not.toContain('está activo');
   });
   it.each(['destroy', 'parameters'])('cancels activation timers on %s', action => {
