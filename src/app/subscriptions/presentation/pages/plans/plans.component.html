@@ -26,7 +26,7 @@
           @if (plan.purchaseMode === 'CONTACT_SALES') {
             <p class="contact-sales">Contactar ventas</p>
           } @else if (plan.purchaseMode === 'CHECKOUT') {
-            <button type="button" class="outline" [attr.aria-pressed]="selectedPlan()?.code === plan.code" (click)="selectPlan(plan)">Elegir plan</button>
+            <button type="button" class="outline" [disabled]="checkingOut()" [attr.aria-pressed]="selectedPlan()?.code === plan.code" (click)="selectPlan(plan)">Elegir plan</button>
           }
         </section>
       }
@@ -39,7 +39,11 @@
         <p>Facturación mensual</p>
         <p>Soles (PEN)</p>
         <p>El pago se realiza en una página segura de Stripe. Podrás revisar el resultado al volver.</p>
-        <button type="button" class="outline" (click)="clearSelection()">Cambiar plan</button>
+        @if (checkoutError()) {
+          <p class="alert" role="alert">{{ checkoutError() }}</p>
+        }
+        <button type="button" class="primary-action" [disabled]="checkingOut()" (click)="checkout()">{{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago' }}</button>
+        <button type="button" class="outline" [disabled]="checkingOut()" (click)="clearSelection()">Cambiar plan</button>
       </section>
     }
   }

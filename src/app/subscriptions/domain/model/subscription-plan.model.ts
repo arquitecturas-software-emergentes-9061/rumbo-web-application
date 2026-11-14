@@ -13,3 +13,14 @@ export interface SubscriptionPlan {
   billingInterval: 'MONTH';
   purchaseMode: PurchaseMode;
 }
+
+export type CheckoutPlanCode = Exclude<PlanCode, 'ENTERPRISE'>;
+
+export interface CheckoutSession {
+  orderId: string;
+  planCode: CheckoutPlanCode;
+  status: 'PENDING';
+  amount: number;
+  currency: string;
+  checkoutUrl: string;
+}
