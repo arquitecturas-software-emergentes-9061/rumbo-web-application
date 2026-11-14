@@ -66,6 +66,30 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'subscriptions/me',
+    loadComponent: () => import('./subscriptions/presentation/pages/my-subscription/my-subscription.component')
+      .then(module => module.MySubscriptionComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'subscriptions/plans',
+    loadComponent: () => import('./subscriptions/presentation/pages/plans/plans.component')
+      .then(module => module.PlansComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'subscriptions/checkout',
+    loadComponent: () => import('./subscriptions/presentation/pages/checkout/checkout.component')
+      .then(module => module.CheckoutComponent),
+    canActivate: [authGuard]
+  },
+  {
+    path: 'subscriptions/payment-result',
+    loadComponent: () => import('./subscriptions/presentation/pages/payment-result/payment-result.component')
+      .then(module => module.PaymentResultComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }

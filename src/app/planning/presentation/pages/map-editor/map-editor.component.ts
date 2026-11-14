@@ -18,7 +18,8 @@ import { proposalWithGraph, unresolvedProposalConnections,
 import { GenerateModelUseCase } from '../../../application/generate-model.use-case';
 import { PlanReconciliationReview } from '../../../application/reconcile-plan-proposal';
 import {
-  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor
+  CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor,
+  ProposalAssignments, reconcileDestinations
 } from '../../../domain/model/graph-model';
 import { GraphAlert, countErrors, validateFloorProposal } from '../../../domain/model/graph-validation';
 import { crossingConflictDetails, crossingConflicts, doorSegment, proposalGeometry } from '../../../domain/model/map-geometry';
@@ -160,11 +161,21 @@ export class MapEditorComponent implements OnInit {
     .map((item, index) => ({ item, index })).filter(({ index }) => !this.reconciliationDecisions()[index]));
   readonly mandatoryPendingReconciliation = computed(() => this.pendingReconciliation()
     .filter(({ item }) => item.destinationIds.length > 0 || item.verticalConnectionIds.length > 0));
-  readonly invalidReassignments = computed(() => this.reconciliationReview()
-    .map((item, index) => ({ item, index, decision: this.reconciliationDecisions()[index] }))
-    .filter(({ item, decision }) => decision?.action === 'REASSIGNED'
-      && (!decision.targetZoneId || (item.destinationIds.length + item.verticalConnectionIds.length > 0
-        && this.affectedSourceNodeIds(item).length !== 1))));
+  readonly invalidReassignments = computed(() => {
+    const current = this.proposal();
+    const decisions = this.reconciliationDecisions();
+    const reassignments = this.reconciliationReview().map((item, index) => ({ item, index, decision: decisions[index] }))
+      .filter(({ decision }) => decision?.action === 'REASSIGNED')
+      .map(review => ({ ...review, target: review.decision?.targetZoneId, sources: this.affectedSourceNodeIds(review.item) }));
+    return reassignments.filter(({ item, target, sources }) => {
+      if (!target || !current?.zones.some(zone => zone.id === target)
+          || reassignments.filter(review => review.target === target).length > 1) return true;
+      if (!item.destinationIds.length && !item.verticalConnectionIds.length) return false;
+      return sources.length !== 1 || !current.nodes.some(node => node.id === target)
+        || reassignments.filter(review => review.sources.includes(sources[0])).length > 1
+        || this.editor.floorNodes().some(node => node.id === target && node.id !== sources[0]);
+    });
+  });
   readonly automaticReconciliation = computed(() => {
     const pendingIds = new Set(this.reconciliationReview().flatMap(item => item.proposedZoneIds));
     return (this.proposal()?.zones ?? []).filter(zone => !pendingIds.has(zone.id));
@@ -560,6 +571,23 @@ export class MapEditorComponent implements OnInit {
       this.tab.set('reconciliation');
       return;
     }
+    const currentPlan = this.editor.plan(), proposedPlan = this.previewEditor.plan();
+    const graph = this.editor.graph();
+    const localIds = new Set(graph.nodes.filter(node => node.floorId === currentPlan?.floorId).map(node => node.id));
+    const hasSavedDestinations = graph.destinations.some(entry => localIds.has(entry.nodeId));
+    if (hasSavedDestinations && currentPlan && proposedPlan && currentPlan.planVersionId !== proposedPlan.planVersionId) {
+      this.notice.set('El borrador corresponde a otra versión del plano. Revisa la versión asociada antes de regenerar para conservar los destinos.');
+      return;
+    }
+    const resolved = this.proposalWithReconciliationDecisions(current);
+    const reconciliation = currentPlan
+      ? reconcileDestinations(graph, resolved.proposal, currentPlan, resolved.assignments)
+      : null;
+    if (reconciliation?.ambiguous.length) {
+      this.notice.set('Hay ambientes o destinos con nombres repetidos. Corrige sus nombres en la propuesta antes de aplicarla para evitar asignaciones ambiguas.');
+      this.tab.set('alerts');
+      return;
+    }
     if (this.previewValidationErrors().length || this.previewEditor.geometryError()) {
       this.notice.set('La propuesta aún tiene errores de integridad. Revisa las alertas antes de aplicarla al borrador.');
       this.tab.set('alerts');
@@ -571,21 +599,21 @@ export class MapEditorComponent implements OnInit {
       return;
     }
     if (!this.draft()) { this.createDraft(() => this.applyProposal()); return; }
-    const resolved = this.proposalWithReconciliationDecisions(current);
-    if (!this.editor.applyGenerated(resolved.application, this.previewEditor.graph())) {
+    const unresolved = reconciliation?.unresolved ?? [];
+    if (!this.editor.applyGenerated(resolved.proposal, this.previewEditor.graph(), resolved.assignments)) {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;
     }
-    for (const move of resolved.moves) this.editor.moveTo(move.nodeId, move.x, move.y);
-    this.backdrop.set(resolved.display);
+    this.backdrop.set(resolved.proposal);
     const siteId = this.siteId(), floorId = this.floorId(), planVersionId = this.editor.plan()?.planVersionId;
-    if (siteId && floorId && planVersionId) this.backdropCache.set(`${siteId}|${floorId}|${planVersionId}`, resolved.display);
+    if (siteId && floorId && planVersionId) this.backdropCache.set(`${siteId}|${floorId}|${planVersionId}`, resolved.proposal);
     this.backdropRequest++;
     this.backdropLoading.set(false);
     this.backdropUnavailable.set(false);
     this.resetPreview();
     this.tab.set('properties');
     this.success.set('Propuesta aplicada al borrador. Revísala y guarda los cambios.');
+    if (unresolved.length) this.notice.set(`${unresolved.length} destino(s) existente(s) no coincidieron de forma única con los ambientes nuevos. Conservan su nombre y referencia; revisa sus conexiones antes de guardar.`);
   }
 
   discardProposal(): void { this.resetPreview(); this.tab.set('properties'); }
@@ -689,32 +717,31 @@ export class MapEditorComponent implements OnInit {
   }
 
   private proposalWithReconciliationDecisions(current: ModelProposal): {
-    application: ModelProposal; display: ModelProposal; moves: { nodeId: string; x: number; y: number }[]
+    proposal: ModelProposal; assignments: ProposalAssignments
   } {
-    let display = current;
-    const moves: { nodeId: string; x: number; y: number }[] = [];
+    let proposal = current;
+    const reviewedNodes = new Set(this.reconciliationReview().flatMap(item => this.affectedSourceNodeIds(item)));
+    const saved = this.editor.floorNodes();
+    const matches = new Map<string, string>();
+    for (const zone of current.zones) {
+      if (current.nodes.some(node => node.id === zone.id)
+          && saved.some(node => node.id === zone.id && !reviewedNodes.has(node.id))) matches.set(zone.id, zone.id);
+    }
     for (const [rawIndex, decision] of Object.entries(this.reconciliationDecisions())) {
       if (decision.action !== 'REASSIGNED' || !decision.targetZoneId) continue;
       const item = this.reconciliationReview()[Number(rawIndex)];
+      const sourceId = item && this.affectedSourceNodeIds(item)[0];
+      if (sourceId && current.nodes.some(node => node.id === decision.targetZoneId)) {
+        matches.set(decision.targetZoneId, sourceId);
+      }
       const previous = item?.previousZoneIds.map(id => this.backdrop()?.zones.find(zone => zone.id === id)).find(Boolean);
-      if (!item || !previous) continue;
-      display = { ...display,
-        zones: display.zones.map(zone => zone.id === decision.targetZoneId
+      if (!previous) continue;
+      proposal = { ...proposal,
+        zones: proposal.zones.map(zone => zone.id === decision.targetZoneId
           ? { ...zone, name: previous.name, category: previous.category } : zone),
-        nodes: display.nodes.map(node => node.id === decision.targetZoneId ? { ...node, label: previous.name } : node) };
+        nodes: proposal.nodes.map(node => node.id === decision.targetZoneId ? { ...node, label: previous.name } : node) };
     }
-    let application = display;
-    for (const [rawIndex, decision] of Object.entries(this.reconciliationDecisions())) {
-      if (decision.action !== 'REASSIGNED' || !decision.targetZoneId) continue;
-      const item = this.reconciliationReview()[Number(rawIndex)], sourceId = item && this.affectedSourceNodeIds(item)[0];
-      const source = sourceId && this.editor.graph().nodes.find(node => node.id === sourceId);
-      const target = display.nodes.find(node => node.id === decision.targetZoneId);
-      if (!source || !target) continue;
-      application = { ...application, nodes: application.nodes.map(node => node.id === target.id
-        ? { ...node, x: source.x, y: source.y } : node) };
-      moves.push({ nodeId: source.id, x: target.x, y: target.y });
-    }
-    return { application, display, moves };
+    return { proposal, assignments: { matches, reviewedNodes } };
   }
 
   reloadBackdrop(): void { this.restoreBackdrop(true); }

@@ -1,0 +1,61 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Planes</span>
+    </nav>
+    <h1>Planes de suscripción</h1>
+    <p>Los precios son mensuales en soles.</p>
+  </header>
+
+  @if (loading()) {
+    <p role="status">Cargando planes…</p>
+  } @else if (loadFailed()) {
+    <p class="alert" role="alert">{{ error() }}</p>
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (plans().length === 0) {
+    <p>No hay planes disponibles por ahora.</p>
+  } @else {
+    <div class="plans-grid">
+      @for (plan of plans(); track plan.code) {
+        <section class="card" [class.selected]="selectedPlan()?.code === plan.code" [attr.aria-labelledby]="'plan-' + plan.code">
+          <h2 [id]="'plan-' + plan.code">{{ plan.name }}</h2>
+          <p class="price">S/ {{ plan.price.amount.toFixed(2) }}</p>
+          <p class="interval">por mes</p>
+          @if (plan.purchaseMode === 'CONTACT_SALES') {
+            <p class="contact-sales">Contactar ventas</p>
+          } @else if (plan.purchaseMode === 'CHECKOUT') {
+            <button type="button" class="outline" [disabled]="checkingOut()" [attr.aria-pressed]="selectedPlan()?.code === plan.code" (click)="selectPlan(plan)">Elegir plan</button>
+          }
+        </section>
+      }
+    </div>
+    @if (selectedPlan(); as plan) {
+      <section class="subscription-summary" aria-labelledby="subscription-summary-title" role="status">
+        <h2 id="subscription-summary-title">Resumen de la suscripción</h2>
+        <p>{{ plan.name }}</p>
+        <p class="price">S/ {{ plan.price.amount.toFixed(2) }}</p>
+        <p>Facturación mensual</p>
+        <p>Soles (PEN)</p>
+        <p>El pago se realiza en una página segura de Stripe. Podrás revisar el resultado al volver.</p>
+        @if (organizationLoading()) {
+          <p>Cargando clínica…</p>
+        } @else if (organizationLoadFailed()) {
+          <p class="alert" role="alert">No se pudieron cargar los datos de tu clínica.</p>
+          <button type="button" class="outline" (click)="loadOrganization()">Reintentar</button>
+        } @else if (organization(); as clinic) {
+          <p>Contratará: {{ clinic.name }}</p>
+        } @else {
+          <p class="alert" role="alert">Registra los datos de tu clínica antes de contratar</p>
+          <a class="outline" routerLink="/planning/sites">Registrar clínica</a>
+        }
+        @if (checkoutError()) {
+          <p class="alert" role="alert">{{ checkoutError() }}</p>
+        }
+        <button type="button" class="primary-action" [disabled]="checkingOut() || organizationLoading() || organizationLoadFailed() || !organization()" (click)="checkout()">{{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago' }}</button>
+        <button type="button" class="outline" [disabled]="checkingOut()" (click)="clearSelection()">Cambiar plan</button>
+      </section>
+    }
+  }
+</app-admin-shell>

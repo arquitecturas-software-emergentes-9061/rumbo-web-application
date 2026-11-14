@@ -80,14 +80,14 @@ describe('MapEditorComponent', () => {
     component.proposal.set(candidate);
     component.previewEditor.load({
       nodes: [
-        { id: 'access', floorId: 'floor', planVersionId: 'v2', x: 0, y: 40, type: 'ACCESS' },
-        { id: 'z-new', floorId: 'floor', planVersionId: 'v2', x: 55, y: 45, type: 'DESTINATION' }
+        { id: 'access', floorId: 'floor', planVersionId: 'pv', x: 0, y: 40, type: 'ACCESS' },
+        { id: 'z-new', floorId: 'floor', planVersionId: 'pv', x: 55, y: 45, type: 'DESTINATION' }
       ],
       connections: [{ id: 'route', sourceNodeId: 'access', targetNodeId: 'z-new', type: 'CORRIDOR',
         distanceMeters: 55, weight: 55, verticalPenalty: 0, accessibility: 'UNKNOWN', bidirectional: true }],
       destinations: [{ id: 'preview-destination', nodeId: 'z-new', type: 'SERVICE', name: 'Sala nueva', specialty: null }],
       walls: [], doors: []
-    }, [{ ...currentPlan, planVersionId: 'v2' }]);
+    }, [currentPlan]);
     component.previewEditor.floorId.set('floor');
     const review: PlanReconciliationReview = { change: 'MOVED', previousZoneIds: ['old-zone'],
       proposedZoneIds: ['z-new'], reason: 'El ambiente cambió de posición.',
@@ -307,6 +307,8 @@ describe('MapEditorComponent', () => {
     expect(component.editor.graph().nodes.find(node => node.id === 'saved-room')).toMatchObject({ x: 58, y: 46 });
     expect(component.editor.graph().destinations).toContainEqual(expect.objectContaining({ id: 'saved-destination', nodeId: 'saved-room' }));
     expect(component.editor.graph().connections).toContainEqual(expect.objectContaining({ id: 'vertical', type: 'ELEVATOR' }));
+    expect(component.editor.graph().connections).toContainEqual(expect.objectContaining({ targetNodeId: 'saved-room', type: 'CORRIDOR' }));
+    expect(component.editor.graph().nodes.filter(node => node.type === 'DESTINATION')).toHaveLength(1);
   });
 
   it('discards only the selected proposal and preserves unrelated preview edits', () => {
@@ -321,6 +323,17 @@ describe('MapEditorComponent', () => {
     expect(component.previewEditor.graph().nodes.some(node => node.id === 'z-new')).toBe(false);
     expect(component.previewEditor.graph().nodes.some(node => node.id === manualId)).toBe(true);
     expect(component.reconciliationDecisions()[0].action).toBe('DISCARDED');
+  });
+
+  it('keeps the draft intact if a reassignment target no longer has a node', () => {
+    const fixture = create([svg]);
+    prepareReconciliation(fixture);
+    const saved = component.editor.graph();
+    component.reassignReconciliation(0, 'z-auto');
+    expect(component.invalidReassignments()).toHaveLength(1);
+    expect(component.canApply()).toBe(false);
+    component.applyProposal();
+    expect(component.editor.graph()).toEqual(saved);
   });
 
   it('explains a rejected route without raw IDs and locates its candidate midpoint', () => {
@@ -807,6 +820,40 @@ describe('MapEditorComponent', () => {
       expect(component.proposal()).not.toBeNull();
       expect(component.notice()).toContain('Calibra la escala');
       expect(component.editor.graph().nodes).toHaveLength(0);
+    });
+
+    it('keeps saved destinations untouched when the selected original differs from the draft plan version', () => {
+      const saved = { nodes: [{ id: 'room', floorId: 'floor', planVersionId: 'pv', x: 20, y: 20, type: 'DESTINATION' }],
+        connections: [], destinations: [{ id: 'destination', nodeId: 'room', type: 'SERVICE', name: 'Caja', specialty: null }] };
+      drafts.load.mockReturnValue(of(draft(0.5, saved)));
+      create([svg]);
+      plans.interpret.mockReturnValue(of(result({ scaleStatus: 'CONFIRMED' })));
+      component.generate();
+      component.applyProposal();
+      expect(component.notice()).toContain('otra versión');
+      expect(component.proposal()).not.toBeNull();
+      expect(component.editor.graph()).toMatchObject(saved);
+    });
+
+    it('requires review before assigning one saved destination to duplicate room labels', () => {
+      const saved = { nodes: [{ id: 'room', floorId: 'floor', planVersionId: 'pv', x: 20, y: 20, type: 'DESTINATION' }],
+        connections: [], destinations: [{ id: 'destination', nodeId: 'room', type: 'SERVICE', name: 'Caja', specialty: null }] };
+      drafts.load.mockReturnValue(of(draft(0.5, saved)));
+      create([{ ...svg, id: 'pv' }]);
+      const zones = [
+        { id: 'r1', name: 'Caja', category: 'ROOM', x: 0, y: 0, width: 20, height: 20 },
+        { id: 'r2', name: 'Caja', category: 'ROOM', x: 30, y: 0, width: 20, height: 20 }
+      ];
+      plans.interpret.mockReturnValue(of(result({ versionId: 'pv', scaleStatus: 'CONFIRMED', proposal: {
+        zones, nodes: [{ id: 'r1', role: 'ROOM', label: 'Caja', x: 10, y: 10 },
+          { id: 'r2', role: 'ROOM', label: 'Caja', x: 40, y: 10 }],
+        connections: [], wallCandidates: [], warnings: []
+      } })));
+      component.generate();
+      component.applyProposal();
+      expect(component.notice()).toContain('nombres repetidos');
+      expect(component.proposal()).not.toBeNull();
+      expect(component.editor.graph()).toMatchObject(saved);
     });
 
     it('creates the first draft when applying a proposal to a site without one', () => {

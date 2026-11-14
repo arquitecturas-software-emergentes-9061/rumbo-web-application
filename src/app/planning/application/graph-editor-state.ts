@@ -4,7 +4,7 @@ import { validWall, validDoor, crossingError, proposalGeometry } from '../domain
 import {
   ConnectionPatch, ConnectionRejection, Destination, DestinationInput, EMPTY_GRAPH, EditorGraph, IdFactory, NodeType, PlanBounds,
   addConnection, addNode, applyProposal, moveNode, nodeRemovalImpact, planFor, randomId, removeConnection, removeNode, updateConnection, updateNodeType,
-  upsertDestination
+  ProposalAssignments, upsertDestination
 } from '../domain/model/graph-model';
 import { GraphHistory } from './graph-history';
 import { verticalConnectionsForFloor } from '../domain/model/vertical-connection';
@@ -226,10 +226,11 @@ export class GraphEditorState {
     this.reconnecting.set(null);
   }
 
-  applyGenerated(proposal: ModelProposal, editedGeometry?: Pick<EditorGraph, 'walls' | 'doors'>): boolean {
+  applyGenerated(proposal: ModelProposal, editedGeometry?: Pick<EditorGraph, 'walls' | 'doors'>,
+                 assignments?: ProposalAssignments): boolean {
     const plan = this.plan();
     if (!plan || plan.metersPerUnit === null) return false;
-    const generated = applyProposal(this.graph(), proposal, plan, this.newId);
+    const generated = applyProposal(this.graph(), proposal, plan, this.newId, assignments);
     const walls = [...(this.graph().walls ?? [])];
     const doors = [...(this.graph().doors ?? [])];
     const geometry = editedGeometry ? {
@@ -238,6 +239,7 @@ export class GraphEditorState {
     if (editedGeometry) {
       const wallIds = new Map<string, string>();
       for (const candidate of editedGeometry.walls ?? []) {
+        if (candidate.floorId !== plan.floorId) continue;
         const match = geometry.walls.find(wall => wall.planVersionId === plan.planVersionId
           && ((Math.hypot(wall.x1 - candidate.x1, wall.y1 - candidate.y1) < 1e-3
             && Math.hypot(wall.x2 - candidate.x2, wall.y2 - candidate.y2) < 1e-3)
@@ -247,7 +249,9 @@ export class GraphEditorState {
         if (!match) geometry.walls.push({ ...candidate, floorId: plan.floorId, planVersionId: plan.planVersionId });
       }
       for (const candidate of editedGeometry.doors ?? []) {
-        const door = { ...candidate, wallId: wallIds.get(candidate.wallId) ?? candidate.wallId };
+        const wallId = wallIds.get(candidate.wallId);
+        if (!wallId) continue;
+        const door = { ...candidate, wallId };
         if (!geometry.doors.some(item => item.wallId === door.wallId
           && Math.abs(item.from - door.from) < 1e-3 && Math.abs(item.to - door.to) < 1e-3)) geometry.doors.push(door);
       }
