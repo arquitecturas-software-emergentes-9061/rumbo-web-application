@@ -1,4 +1,4 @@
-import { MAC_PATTERN, UUID_PATTERN, clampToPlan, isPlaced } from '../domain/model/beacon-rules';
+import { MAC_PATTERN, UUID_PATTERN, clampToPlan, hasValidPlacement, isInsidePlan, isPlaced } from '../domain/model/beacon-rules';
 import { approximateRangeMeters, toSaveRequest } from './beacon-form';
 
 describe('beacon form helpers', () => {
@@ -30,6 +30,11 @@ describe('beacon form helpers', () => {
     expect(isPlaced({ x: null, y: null })).toBe(false);
     expect(clampToPlan(120.26, -3, 100, 60)).toEqual({ x: 100, y: 0 });
     expect(clampToPlan(10.04, 5.06, 100, 60)).toEqual({ x: 10, y: 5.1 });
+    const bounds = { floorId: 'floor-2', widthUnits: 100, heightUnits: 60 };
+    expect(isInsidePlan({ x: 0, y: 60 }, bounds)).toBe(true);
+    expect(isInsidePlan({ x: 100.1, y: 60 }, bounds)).toBe(false);
+    expect(hasValidPlacement({ floorId: 'floor-2', x: 100, y: 60 }, bounds)).toBe(true);
+    expect(hasValidPlacement({ floorId: 'floor-1', x: 10, y: 5 }, bounds)).toBe(false);
   });
 
   it('estimates a range only for a calibrated power', () => {

@@ -24,6 +24,7 @@ export function doorSegment(door: MapDoor, wall: MapWall) {
     y2: wall.y1 + (wall.y2 - wall.y1) * door.to };
 }
 
+
 export interface GeometryConflict { connectionId: string; message: string; point?: { x: number; y: number } }
 
 export function crossingConflictDetails(graph: EditorGraph): GeometryConflict[] {
@@ -109,6 +110,26 @@ export function proposalGeometry(proposal: ModelProposal, plan: PlanBounds, grap
         ? [{ wall, from: Math.max(0, from), to: Math.min(1, to), error }] : [];
     }).sort((a, b) => a.error - b.error);
     if (!matches.length) {
+      const length = Math.hypot(candidate.x2 - candidate.x1, candidate.y2 - candidate.y1);
+      const alignedEnd = (wall: MapWall, x: number, y: number) => {
+        const wallLength = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+        return wall.planVersionId === plan.planVersionId && wallLength > 1e-6 && length > 1e-6
+          && Math.abs((candidate.x2 - candidate.x1) * (wall.y2 - wall.y1)
+            - (candidate.y2 - candidate.y1) * (wall.x2 - wall.x1)) / (length * wallLength) <= .2
+          && Math.min(Math.hypot(wall.x1 - x, wall.y1 - y), Math.hypot(wall.x2 - x, wall.y2 - y)) <= 2;
+      };
+      const first = walls.find(wall => alignedEnd(wall, candidate.x1, candidate.y1));
+      const second = walls.find(wall => wall.id !== first?.id && alignedEnd(wall, candidate.x2, candidate.y2));
+      if (first && second) {
+        const bridge: MapWall = { id: newId(), floorId: plan.floorId, planVersionId: plan.planVersionId,
+          x1: candidate.x1, y1: candidate.y1, x2: candidate.x2, y2: candidate.y2 };
+        const door: MapDoor = { id: newId(), wallId: bridge.id, from: 0, to: 1 };
+        if (validWall(bridge, plan) && validDoor(door, { ...graph, walls: [...walls, bridge], doors })) {
+          walls.push(bridge);
+          doors.push(door);
+          continue;
+        }
+      }
       issues.push({ code: 'UNMATCHED_DOOR', candidateKind: 'door', candidateIndex: doorIndex,
         message: `Puerta candidata ${doorIndex + 1}: no se encontró un muro compatible; conserva su trazo para asociarla manualmente.` });
       continue;

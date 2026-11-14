@@ -24,7 +24,8 @@ export class DraftGraphService implements DraftGraphPort {
     const previous = graph.connections.findIndex(item => item.id === connection.id);
     const connections = previous < 0 ? [...graph.connections, connection] :
       graph.connections.map(item => item.id === connection.id ? connection : item);
-    return this.http.put<DraftGraph>(url, { nodes: graph.nodes, connections, destinations: graph.destinations },
+    return this.http.put<DraftGraph>(url, { nodes: graph.nodes, connections, destinations: graph.destinations,
+      walls: graph.walls, doors: graph.doors },
       { headers: { 'If-Match': etag }, observe: 'response' }).pipe(map(response => this.snapshot(response)));
   }
 
@@ -35,7 +36,8 @@ export class DraftGraphService implements DraftGraphPort {
   private snapshot(response: HttpResponse<DraftGraph>): DraftSnapshot {
     const graph = response.body;
     const etag = response.headers.get('ETag');
-    if (!graph || graph.status !== 'DRAFT' || !etag) throw new Error('Incomplete draft graph response');
+    if (!graph || graph.status !== 'DRAFT' || !etag || !Array.isArray(graph.walls) || !Array.isArray(graph.doors))
+      throw new Error('Incomplete draft graph response');
     return { graph, etag };
   }
 }

@@ -29,7 +29,8 @@ export class BeaconsService implements BeaconsPort {
   loadPlanBounds(siteId: string) {
     const url = `${environment.apiUrl}/sites/${encodeURIComponent(siteId)}/maps/draft/graph`;
     return this.http.get<{ plans?: FloorPlanBounds[] }>(url).pipe(
-      map(graph => (graph.plans ?? []).map(({ floorId, widthUnits, heightUnits }) => ({ floorId, widthUnits, heightUnits }))),
+      map(graph => (graph.plans ?? []).map(({ floorId, planVersionId, widthUnits, heightUnits }) =>
+        ({ floorId, ...(planVersionId ? { planVersionId } : {}), widthUnits, heightUnits }))),
       catchError(error => error.status === 404 ? of([] as FloorPlanBounds[]) : throwError(() => error))
     );
   }

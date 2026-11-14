@@ -16,10 +16,11 @@ import { GraphEditorState, Tool } from '../../../application/graph-editor-state'
 import { proposalWithGraph, unresolvedProposalConnections,
   unadoptedProposalGeometry } from '../../../application/proposal-graph';
 import { GenerateModelUseCase } from '../../../application/generate-model.use-case';
+import { PlanReconciliationReview } from '../../../application/reconcile-plan-proposal';
 import {
   CONNECTION_TYPES, ConnectionAccessibility, ConnectionType, DESTINATION_TYPES, DestinationType, NODE_TYPES, NodeType, nodeTypeFor
 } from '../../../domain/model/graph-model';
-import { GraphAlert, countErrors } from '../../../domain/model/graph-validation';
+import { GraphAlert, countErrors, validateFloorProposal } from '../../../domain/model/graph-validation';
 import { crossingConflictDetails, crossingConflicts, doorSegment, proposalGeometry } from '../../../domain/model/map-geometry';
 import { DraftSnapshot, SaveFailure } from '../../../application/map-editor.contracts';
 import { classifySaveError } from './save-error';
@@ -30,7 +31,8 @@ import {
   nodeLabel, polygonPath, viewBoxFor, zoneFill, zonePath
 } from './model-preview';
 
-type PanelTab = 'properties' | 'alerts';
+type PanelTab = 'properties' | 'reconciliation' | 'alerts';
+type ReconciliationDecision = { action: 'APPROVED' | 'REASSIGNED' | 'DISCARDED'; targetZoneId?: string };
 type AlertTarget = { kind: 'zone' | 'node' | 'connection' | 'wall' | 'door'; id: string; point?: { x: number; y: number } }
   | { kind: 'wallCandidate' | 'doorCandidate'; index: number }
   | { kind: 'point'; x: number; y: number } | { kind: 'plan' };
@@ -90,6 +92,8 @@ export class MapEditorComponent implements OnInit {
   readonly notice = signal<string | null>(null);
   readonly success = signal<string | null>(null);
   readonly proposal = signal<ModelProposal | null>(null);
+  readonly reconciliationReview = signal<PlanReconciliationReview[]>([]);
+  readonly reconciliationDecisions = signal<Record<number, ReconciliationDecision>>({});
   readonly unadoptedGeometry = signal<Pick<ModelProposal, 'wallCandidates' | 'doors'>>({ wallCandidates: [], doors: [] });
   readonly scaleProvisional = signal(true);
   readonly tab = signal<PanelTab>('properties');
@@ -152,6 +156,19 @@ export class MapEditorComponent implements OnInit {
     return null;
   });
   readonly summary = computed(() => (this.proposal() ? summarize(this.proposal() as ModelProposal) : null));
+  readonly pendingReconciliation = computed(() => this.reconciliationReview()
+    .map((item, index) => ({ item, index })).filter(({ index }) => !this.reconciliationDecisions()[index]));
+  readonly mandatoryPendingReconciliation = computed(() => this.pendingReconciliation()
+    .filter(({ item }) => item.destinationIds.length > 0 || item.verticalConnectionIds.length > 0));
+  readonly invalidReassignments = computed(() => this.reconciliationReview()
+    .map((item, index) => ({ item, index, decision: this.reconciliationDecisions()[index] }))
+    .filter(({ item, decision }) => decision?.action === 'REASSIGNED'
+      && (!decision.targetZoneId || (item.destinationIds.length + item.verticalConnectionIds.length > 0
+        && this.affectedSourceNodeIds(item).length !== 1))));
+  readonly automaticReconciliation = computed(() => {
+    const pendingIds = new Set(this.reconciliationReview().flatMap(item => item.proposedZoneIds));
+    return (this.proposal()?.zones ?? []).filter(zone => !pendingIds.has(zone.id));
+  });
   readonly unresolvedConnections = computed(() => this.proposal() ? unresolvedProposalConnections(this.proposal() as ModelProposal) : []);
   readonly isolated = computed(() => (this.proposal() ? isolatedZones(this.proposal() as ModelProposal) : []));
   readonly unlabeled = computed(() => (this.proposal() ? unlabeledZones(this.proposal() as ModelProposal) : []));
@@ -164,7 +181,22 @@ export class MapEditorComponent implements OnInit {
     const list: ProposalAlert[] = current.warnings.map(message => ({
       message: this.readableWarning(current, message), target: this.warningTarget(current, message)
     }));
-    if ((current.doors?.length ?? 0) === 0 && (current.wallCandidates.length > 0 || current.zones.length > 0)
+    const disconnected = this.previewValidationErrors().filter(issue => issue.code === 'DISCONNECTED_NODE');
+    if (disconnected.length) {
+      const local = new Set(this.previewEditor.floorNodes().map(node => node.id));
+      const firstLocal = disconnected.find(issue => issue.elementId && local.has(issue.elementId));
+      list.push({
+        message: disconnected.length === 1
+          ? 'Hay un nodo sin ruta a un acceso. Revisa el enlace con la red principal.'
+          : `Hay ${disconnected.length} nodos sin ruta a un acceso. Revisa dónde se interrumpe la red principal.`,
+        target: firstLocal?.elementId ? { kind: 'node', id: firstLocal.elementId } : { kind: 'plan' }
+      });
+    }
+    for (const issue of this.previewValidationErrors().filter(item => item.code !== 'DISCONNECTED_NODE')) {
+      list.push({ message: issue.message,
+        target: issue.elementType === 'NODE' && issue.elementId ? { kind: 'node', id: issue.elementId } : { kind: 'plan' } });
+    }
+    if ((current.doors?.length ?? 0) === 0 && current.wallCandidates.length > 0
         && !current.warnings.some(message => /No se detectaron puertas|No hay puertas anotadas/.test(message))) {
       list.push({ message: 'No se reconocieron puertas en este plano. Revisa los muros y agrega las aberturas manualmente antes de crear rutas por ellas.',
         target: { kind: 'plan' } });
@@ -185,11 +217,6 @@ export class MapEditorComponent implements OnInit {
       list.push({ message: `El ambiente «${zone.name}» queda fuera de la red de recorridos. Ningún paciente podría llegar a él.`,
         target: { kind: 'zone', id: zone.id } });
     }
-    for (const zone of this.unlabeled()) {
-      list.push({ message: `El ambiente «${zone.name}» no tiene una etiqueta confiable: confirma su tipo y nombre antes de publicar.`,
-        target: { kind: 'zone', id: zone.id } });
-    }
-    if (this.scaleProvisional()) list.push({ message: 'La escala es provisional: calibra el plano antes de publicar el mapa.', target: { kind: 'plan' } });
     for (const issue of this.previewGeometry()?.issues ?? []) list.push({ message: issue.message,
       target: issue.candidateKind === 'wall' ? { kind: 'wallCandidate', index: issue.candidateIndex }
         : { kind: 'doorCandidate', index: issue.candidateIndex } });
@@ -226,6 +253,10 @@ export class MapEditorComponent implements OnInit {
     return { kind: 'plan' };
   }
   readonly selectedZone = computed(() => this.proposal()?.zones.find(zone => zone.id === this.selectedZoneId()) ?? null);
+  readonly selectedDoorCandidate = computed(() => {
+    const index = this.highlightedDoorCandidate();
+    return index === null ? null : this.previewBackdrop()?.doors?.[index] ?? null;
+  });
   readonly previewBackdrop = computed(() => {
     const current = this.proposal();
     return current ? { ...current, ...this.unadoptedGeometry() } : null;
@@ -275,11 +306,26 @@ export class MapEditorComponent implements OnInit {
   /** A site without any map can start its first draft from the plan selected for the current floor. */
   readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
     && !!this.siteId() && !!this.floorId() && !!this.versionId());
+  readonly previewValidationErrors = computed(() => {
+    const plan = this.previewEditor.plan();
+    return plan ? validateFloorProposal(this.previewEditor.graph(), plan).filter(issue => issue.severity === 'error') : [];
+  });
+  readonly proposalDraftPlanMissing = computed(() => !!this.proposal() && !!this.draft() && !this.editor.plan());
   readonly canApply = computed(() => !!this.proposal() && this.unresolvedConnections().length === 0
+    && this.mandatoryPendingReconciliation().length === 0 && this.invalidReassignments().length === 0
+    && this.previewValidationErrors().length === 0 && !this.previewEditor.geometryError()
     && (this.draft() ? !!this.editor.plan() : this.canCreateDraft()));
   readonly proposalScaleBlocks = computed(() => this.editor.plan() !== null && this.editor.plan()?.metersPerUnit === null);
   readonly toolHint = computed(() => this.tools.find(item => item.id === this.activeEditor().tool())?.hint ?? '');
   readonly selectedKindLabel = computed(() => this.editor.selectedNode() ? 'nodo' : this.editor.selectedConnection() ? 'arista' : null);
+  readonly selectedVerticalConnections = computed(() => {
+    const node = this.activeEditor().selectedNode();
+    return node ? this.activeEditor().floorVerticalConnections().filter(item => item.local.id === node.id) : [];
+  });
+
+  floorName(id: string): string {
+    return this.floors().find(floor => floor.id === id)?.name ?? 'Otro piso';
+  }
 
   constructor() {
     effect(() => {
@@ -465,7 +511,7 @@ export class MapEditorComponent implements OnInit {
     this.error.set(null);
     this.notice.set(null);
     this.success.set(null);
-    this.generateModel.execute(siteId, floorId, versionId, this.editor.plan()).pipe(
+    this.generateModel.execute(siteId, floorId, versionId, this.editor.plan(), this.editor.graph(), this.backdrop()).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => this.generating.set(false))
     ).subscribe({
@@ -485,14 +531,15 @@ export class MapEditorComponent implements OnInit {
         this.previewEditor.load(generated.graph, [generated.plan]);
         this.previewEditor.floorId.set(floorId);
         this.proposal.set(generated.proposal);
+        this.reconciliationReview.set(generated.reconciliationReview);
+        this.reconciliationDecisions.set({});
         this.generated.set(generated.proposal);
         this.selectedLinkId.set(null);
         this.scaleProvisional.set(generated.interpretation.scaleStatus !== 'CONFIRMED');
         this.selectedZoneId.set(null);
-        this.tab.set(generated.proposal.warnings.length > 0 || unlabeledZones(generated.proposal).length > 0
-          || this.unresolvedConnections().length > 0
-          || (this.previewGeometry()?.issues.length ?? 0) > 0 || (this.previewGeometry()?.conflicts.length ?? 0) > 0
-          ? 'alerts' : 'properties');
+        this.tab.set(generated.reconciliationReview.some(item => item.destinationIds.length > 0 || item.verticalConnectionIds.length > 0)
+          ? 'reconciliation'
+          : this.proposalAlerts().length > 0 ? 'alerts' : 'properties');
       },
       error: (error: HttpErrorResponse) => {
         this.resetPreview();
@@ -504,19 +551,35 @@ export class MapEditorComponent implements OnInit {
   applyProposal(): void {
     const current = this.proposal();
     if (!current) return;
+    if (this.proposalDraftPlanMissing()) {
+      this.notice.set('Este piso todavía no está registrado en el borrador de la sede.');
+      return;
+    }
+    if (this.mandatoryPendingReconciliation().length || this.invalidReassignments().length) {
+      this.notice.set('Resuelve todos los cambios obligatorios del plano antes de aplicar la propuesta al borrador.');
+      this.tab.set('reconciliation');
+      return;
+    }
+    if (this.previewValidationErrors().length || this.previewEditor.geometryError()) {
+      this.notice.set('La propuesta aún tiene errores de integridad. Revisa las alertas antes de aplicarla al borrador.');
+      this.tab.set('alerts');
+      return;
+    }
     if (this.unresolvedConnections().length) {
       this.notice.set('La propuesta contiene conexiones sin nodos. Corrige el plano y vuelve a generar el modelo.');
       this.tab.set('alerts');
       return;
     }
     if (!this.draft()) { this.createDraft(() => this.applyProposal()); return; }
-    if (!this.editor.applyGenerated(current, this.previewEditor.graph())) {
+    const resolved = this.proposalWithReconciliationDecisions(current);
+    if (!this.editor.applyGenerated(resolved.application, this.previewEditor.graph())) {
       this.notice.set('Calibra la escala del plano en Mapas antes de aplicar la propuesta al borrador: las distancias se miden en metros.');
       return;
     }
-    this.backdrop.set(current);
+    for (const move of resolved.moves) this.editor.moveTo(move.nodeId, move.x, move.y);
+    this.backdrop.set(resolved.display);
     const siteId = this.siteId(), floorId = this.floorId(), planVersionId = this.editor.plan()?.planVersionId;
-    if (siteId && floorId && planVersionId) this.backdropCache.set(`${siteId}|${floorId}|${planVersionId}`, current);
+    if (siteId && floorId && planVersionId) this.backdropCache.set(`${siteId}|${floorId}|${planVersionId}`, resolved.display);
     this.backdropRequest++;
     this.backdropLoading.set(false);
     this.backdropUnavailable.set(false);
@@ -526,6 +589,133 @@ export class MapEditorComponent implements OnInit {
   }
 
   discardProposal(): void { this.resetPreview(); this.tab.set('properties'); }
+
+  approveReconciliation(index: number): void {
+    this.setReconciliationDecision(index, { action: 'APPROVED' });
+  }
+
+  reassignReconciliation(index: number, targetZoneId: string): void {
+    if (!targetZoneId || !this.proposal()?.zones.some(zone => zone.id === targetZoneId)) return;
+    this.setReconciliationDecision(index, { action: 'REASSIGNED', targetZoneId });
+  }
+
+  discardReconciliation(index: number): void {
+    const item = this.reconciliationReview()[index], current = this.proposal();
+    if (!item || !current) return;
+    const removed = new Set(item.proposedZoneIds);
+    for (const nodeId of removed) {
+      if (!this.previewEditor.graph().nodes.some(node => node.id === nodeId)) continue;
+      this.previewEditor.select({ kind: 'node', id: nodeId });
+      this.previewEditor.deleteSelection();
+    }
+    this.proposal.set({ ...current,
+      zones: current.zones.filter(zone => !removed.has(zone.id)),
+      nodes: current.nodes.filter(node => !removed.has(node.id)),
+      connections: current.connections.filter(connection => !removed.has(connection.fromNodeId)
+        && !removed.has(connection.toNodeId)) });
+    this.setReconciliationDecision(index, { action: 'DISCARDED' });
+  }
+
+  undoReconciliation(index: number): void {
+    this.reconciliationDecisions.update(current => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+  }
+
+  focusReconciliation(item: PlanReconciliationReview): void {
+    const proposedId = item.proposedZoneIds.find(id => this.proposal()?.zones.some(zone => zone.id === id));
+    if (proposedId) { this.selectZone(proposedId); this.tab.set('reconciliation'); return; }
+    const destination = item.destinationIds.map(id => this.previewEditor.graph().destinations.find(entry => entry.id === id))
+      .find(Boolean);
+    const node = destination && this.previewEditor.graph().nodes.find(candidate => candidate.id === destination.nodeId);
+    if (node) {
+      this.previewEditor.select({ kind: 'node', id: node.id });
+      this.highlightPoint(node.x, node.y);
+    }
+    this.tab.set('reconciliation');
+  }
+
+  reconciliationChangeLabel(item: PlanReconciliationReview): string {
+    return ({ MOVED: 'Ambiente movido', SPLIT: 'Ambiente dividido', MERGED: 'Ambientes fusionados',
+      AMBIGUOUS: 'Correspondencia ambigua', UNMATCHED: 'Sin correspondencia', MATCHED: 'Correspondencia automática' })[item.change];
+  }
+
+  reconciliationDecisionLabel(decision: ReconciliationDecision): string {
+    return decision.action === 'APPROVED' ? 'Aprobado' : decision.action === 'DISCARDED' ? 'Descartado' : 'Reasignado';
+  }
+
+  affectedDestinationNames(item: PlanReconciliationReview): string[] {
+    return item.destinationIds.map(id => this.editor.graph().destinations.find(destination => destination.id === id)?.name)
+      .filter((name): name is string => !!name);
+  }
+
+  affectedVerticalConnections(item: PlanReconciliationReview): string[] {
+    return item.verticalConnectionIds.flatMap(id => {
+      const connection = this.editor.graph().connections.find(candidate => candidate.id === id);
+      if (!connection) return [];
+      const source = this.editor.graph().nodes.find(node => node.id === connection.sourceNodeId);
+      const target = this.editor.graph().nodes.find(node => node.id === connection.targetNodeId);
+      const remote = source?.floorId === this.floorId() ? target : source;
+      return [`${this.verticalTypeLabel(connection.type)} · ${remote ? this.floorName(remote.floorId) : 'otro piso'}`];
+    });
+  }
+
+  private setReconciliationDecision(index: number, decision: ReconciliationDecision): void {
+    if (!this.reconciliationReview()[index]) return;
+    this.reconciliationDecisions.update(current => ({ ...current, [index]: decision }));
+  }
+
+  private verticalTypeLabel(type: string): string {
+    return type === 'ELEVATOR' ? 'Ascensor' : type === 'STAIRS' ? 'Escalera' : type === 'RAMP' ? 'Rampa' : 'Conexión vertical';
+  }
+
+  private affectedSourceNodeIds(item: PlanReconciliationReview): string[] {
+    const graph = this.editor.graph(), ids = new Set<string>();
+    for (const destinationId of item.destinationIds) {
+      const destination = graph.destinations.find(candidate => candidate.id === destinationId);
+      if (destination) ids.add(destination.nodeId);
+    }
+    for (const connectionId of item.verticalConnectionIds) {
+      const connection = graph.connections.find(candidate => candidate.id === connectionId);
+      if (!connection) continue;
+      const source = graph.nodes.find(node => node.id === connection.sourceNodeId);
+      const target = graph.nodes.find(node => node.id === connection.targetNodeId);
+      if (source?.floorId === this.floorId()) ids.add(source.id);
+      if (target?.floorId === this.floorId()) ids.add(target.id);
+    }
+    return [...ids];
+  }
+
+  private proposalWithReconciliationDecisions(current: ModelProposal): {
+    application: ModelProposal; display: ModelProposal; moves: { nodeId: string; x: number; y: number }[]
+  } {
+    let display = current;
+    const moves: { nodeId: string; x: number; y: number }[] = [];
+    for (const [rawIndex, decision] of Object.entries(this.reconciliationDecisions())) {
+      if (decision.action !== 'REASSIGNED' || !decision.targetZoneId) continue;
+      const item = this.reconciliationReview()[Number(rawIndex)];
+      const previous = item?.previousZoneIds.map(id => this.backdrop()?.zones.find(zone => zone.id === id)).find(Boolean);
+      if (!item || !previous) continue;
+      display = { ...display,
+        zones: display.zones.map(zone => zone.id === decision.targetZoneId
+          ? { ...zone, name: previous.name, category: previous.category } : zone),
+        nodes: display.nodes.map(node => node.id === decision.targetZoneId ? { ...node, label: previous.name } : node) };
+    }
+    let application = display;
+    for (const [rawIndex, decision] of Object.entries(this.reconciliationDecisions())) {
+      if (decision.action !== 'REASSIGNED' || !decision.targetZoneId) continue;
+      const item = this.reconciliationReview()[Number(rawIndex)], sourceId = item && this.affectedSourceNodeIds(item)[0];
+      const source = sourceId && this.editor.graph().nodes.find(node => node.id === sourceId);
+      const target = display.nodes.find(node => node.id === decision.targetZoneId);
+      if (!source || !target) continue;
+      application = { ...application, nodes: application.nodes.map(node => node.id === target.id
+        ? { ...node, x: source.x, y: source.y } : node) };
+      moves.push({ nodeId: source.id, x: target.x, y: target.y });
+    }
+    return { application, display, moves };
+  }
 
   reloadBackdrop(): void { this.restoreBackdrop(true); }
 
@@ -568,7 +758,7 @@ export class MapEditorComponent implements OnInit {
     const { name, category } = this.zoneForm.getRawValue();
     const corrected = correctZone(current, id, { name, category });
     this.syncZoneNode(corrected, id);
-    this.proposal.set(proposalWithGraph(corrected, this.previewEditor.graph()));
+    this.proposal.set(proposalWithGraph(corrected, this.previewEditor.graph(), this.previewEditor.floorId()));
     this.success.set('Ambiente corregido. La corrección se usará al aplicar la propuesta al borrador.');
   }
 
@@ -577,7 +767,7 @@ export class MapEditorComponent implements OnInit {
     if (!id || !original || !current) return;
     const restored = correctZone(current, id, { name: original.name, category: original.category });
     this.syncZoneNode(restored, id);
-    this.proposal.set(proposalWithGraph(restored, this.previewEditor.graph()));
+    this.proposal.set(proposalWithGraph(restored, this.previewEditor.graph(), this.previewEditor.floorId()));
     this.zoneForm.reset({ name: original.name, category: original.category.toUpperCase() });
   }
 
@@ -632,6 +822,13 @@ export class MapEditorComponent implements OnInit {
     this.clearAlertHighlight();
     this.selectedZoneId.set(null); this.activeEditor().doorClick(id); this.tab.set('properties');
   }
+  doorCandidatePicked(index: number): void {
+    this.clearAlertHighlight();
+    this.previewEditor.select(null);
+    this.selectedZoneId.set(null);
+    this.highlightedDoorCandidate.set(index);
+    this.tab.set('properties');
+  }
   wallMoved(event: { id: string; x1: number; y1: number; x2: number; y2: number }): void {
     this.activeEditor().updateWall(event.id, event);
   }
@@ -675,7 +872,7 @@ export class MapEditorComponent implements OnInit {
 
   private syncPreviewGraph(): void {
     const current = this.proposal();
-    if (current) this.proposal.set(proposalWithGraph(current, this.previewEditor.graph()));
+    if (current) this.proposal.set(proposalWithGraph(current, this.previewEditor.graph(), this.previewEditor.floorId()));
   }
 
   private syncZoneNode(proposal: ModelProposal, zoneId: string): void {
@@ -930,6 +1127,8 @@ export class MapEditorComponent implements OnInit {
   private resetPreview(): void {
     this.clearAlertHighlight();
     this.proposal.set(null);
+    this.reconciliationReview.set([]);
+    this.reconciliationDecisions.set({});
     this.unadoptedGeometry.set({ wallCandidates: [], doors: [] });
     this.previewEditor.load({ nodes: [], connections: [], destinations: [] }, []);
     this.generated.set(null);

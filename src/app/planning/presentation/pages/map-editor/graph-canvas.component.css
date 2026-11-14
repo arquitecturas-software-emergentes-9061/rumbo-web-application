@@ -17,6 +17,9 @@
 .edge-hit:focus-visible { stroke: rgb(9 106 153 / .35); outline: none; }
 .node { cursor: grab; outline: none; }
 .node circle { stroke: #fff; }
+.node .vertical-marker { fill: none; stroke: #426e9a; pointer-events: none; }
+.node .vertical-marker.accessible { stroke: var(--success); }
+.node .vertical-marker.inaccessible { stroke: var(--error); }
 .node.selected circle { stroke: #142e44; }
 .node.pending circle { stroke: #654516; stroke-dasharray: 3 2; }
 .node:focus-visible circle { stroke: #142e44; }

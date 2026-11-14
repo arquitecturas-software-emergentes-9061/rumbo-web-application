@@ -21,6 +21,9 @@ describe('Beacon inventory HTTP contract', () => {
   };
 
   it('registers, edits and toggles a beacon under the selected site', () => {
+    const stored = { id: 'b1', siteId: 'site-1', ...request, floorId: 'f2', x: 42.8, y: 18.2, active: false };
+    service.load('site-1').subscribe(beacons => expect(beacons).toEqual([stored]));
+    http.expectOne({ method: 'GET', url: base + '/beacons' }).flush([stored]);
     service.register('site-1', request).subscribe();
     expect(http.expectOne({ method: 'POST', url: base + '/beacons' }).request.body).toEqual(request);
     service.update('site-1', 'b 1', request).subscribe();
@@ -30,7 +33,8 @@ describe('Beacon inventory HTTP contract', () => {
   });
 
   it('reads plan bounds from the draft and treats a missing draft as no plans', () => {
-    service.loadPlanBounds('site-1').subscribe(plans => expect(plans).toEqual([{ floorId: 'f', widthUnits: 100, heightUnits: 60 }]));
+    service.loadPlanBounds('site-1').subscribe(plans => expect(plans).toEqual([
+      { floorId: 'f', planVersionId: 'v', widthUnits: 100, heightUnits: 60 }]));
     http.expectOne({ method: 'GET', url: base + '/maps/draft/graph' })
       .flush({ plans: [{ floorId: 'f', planVersionId: 'v', widthUnits: 100, heightUnits: 60 }] });
     service.loadPlanBounds('site-1').subscribe(plans => expect(plans).toEqual([]));

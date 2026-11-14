@@ -1,4 +1,4 @@
-import { Beacon } from './beacon.model';
+import { Beacon, FloorPlanBounds } from './beacon.model';
 
 export const MAC_PATTERN = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i;
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -7,6 +7,17 @@ export interface BeaconPosition { x: number; y: number }
 
 export function isPlaced(beacon: Pick<Beacon, 'x' | 'y'>): boolean {
   return beacon.x !== null && beacon.y !== null;
+}
+
+export function isInsidePlan(position: BeaconPosition | null, bounds: Pick<FloorPlanBounds, 'widthUnits' | 'heightUnits'> | null): boolean {
+  return !!position && !!bounds && Number.isFinite(position.x) && Number.isFinite(position.y)
+    && position.x >= 0 && position.x <= bounds.widthUnits
+    && position.y >= 0 && position.y <= bounds.heightUnits;
+}
+
+export function hasValidPlacement(beacon: Pick<Beacon, 'floorId' | 'x' | 'y'>, bounds: FloorPlanBounds | null): boolean {
+  return !!bounds && beacon.floorId === bounds.floorId && isPlaced(beacon)
+    && isInsidePlan({ x: beacon.x as number, y: beacon.y as number }, bounds);
 }
 
 export function clampToPlan(x: number, y: number, width: number, height: number): BeaconPosition {

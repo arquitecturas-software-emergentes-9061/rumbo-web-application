@@ -118,6 +118,9 @@
               <button type="button" class="outline" (click)="discardProposal()">Descartar</button>
             </span>
           </div>
+          @if (proposalDraftPlanMissing()) {
+            <p class="hint" role="status">Este piso todavía no está registrado en el borrador de la sede.</p>
+          }
           <app-graph-canvas [nodes]="previewEditor.floorNodes()" [connections]="previewEditor.floorConnections()"
             [walls]="previewEditor.floorWalls()" [doors]="previewEditor.floorDoors()"
             [destinations]="previewEditor.graph().destinations" [plan]="previewEditor.plan()" [tool]="previewEditor.tool()"
@@ -129,6 +132,7 @@
             (nodePicked)="nodePicked($event)" (connectionPicked)="connectionPicked($event)"
             (nodeMoved)="nodeMoved($event.id, $event.x, $event.y)"
             (wallPicked)="wallPicked($event)" (doorPicked)="doorPicked($event)"
+            (doorCandidatePicked)="doorCandidatePicked($event)"
             (wallMoved)="wallMoved($event)" (doorMoved)="doorMoved($event)" />
           <ul class="legend" aria-label="Leyenda">
             <li><span class="swatch node-s"></span>Nodo</li>
@@ -160,6 +164,7 @@
             </p>
           }
           <app-graph-canvas [nodes]="activeEditor().floorNodes()" [connections]="activeEditor().floorConnections()"
+            [verticalConnections]="activeEditor().floorVerticalConnections()"
             [walls]="activeEditor().floorWalls()" [doors]="activeEditor().floorDoors()"
             [destinations]="activeEditor().graph().destinations" [plan]="activeEditor().plan()" [tool]="activeEditor().tool()"
             [selection]="activeEditor().selection()" [pendingFrom]="activeEditor().pendingFrom()" [backdrop]="backdrop()"
@@ -185,6 +190,14 @@
         <div class="tabs" role="tablist">
           <button type="button" role="tab" [attr.aria-selected]="tab() === 'properties'" [class.active]="tab() === 'properties'"
             (click)="setTab('properties')">Propiedades</button>
+          @if (proposal() && reconciliationReview().length > 0) {
+            <button type="button" role="tab" [attr.aria-selected]="tab() === 'reconciliation'"
+              [class.active]="tab() === 'reconciliation'" (click)="setTab('reconciliation')">Revisión
+              @if (mandatoryPendingReconciliation().length + invalidReassignments().length > 0) {
+                <span class="count has-errors">{{ mandatoryPendingReconciliation().length + invalidReassignments().length }}</span>
+              }
+            </button>
+          }
           <button type="button" role="tab" [attr.aria-selected]="tab() === 'alerts'" [class.active]="tab() === 'alerts'"
             (click)="setTab('alerts')">Alertas
             @if ((proposal() ? alerts().length : graphAlerts().length) > 0) {
@@ -194,7 +207,10 @@
         </div>
 
         @if (tab() === 'properties') {
-          @if (selectedZone(); as zone) {
+          @if (selectedDoorCandidate(); as candidate) {
+            <h2>Puerta reconocida</h2>
+            <p class="hint">No se pudo asociar esta abertura a un muro con certeza. Revisa el plano original antes de generar rutas por ella.</p>
+          } @else if (selectedZone(); as zone) {
               <h2>Ambiente reconocido</h2>
               <p class="id">{{ zone.name }}</p>
               <form [formGroup]="zoneForm" (ngSubmit)="applyZoneCorrection()">
@@ -266,6 +282,19 @@
                   <label>Especialidad <input formControlName="specialty" maxlength="150" /></label>
                 </fieldset>
               }
+              @if (selectedVerticalConnections().length) {
+                <fieldset>
+                  <legend>Conexiones entre pisos</legend>
+                  @for (item of selectedVerticalConnections(); track item.connection.id) {
+                    <p class="hint">{{ item.connection.type === 'ELEVATOR' ? 'Ascensor' : item.connection.type === 'STAIRS' ? 'Escalera' : 'Rampa' }}
+                      hacia {{ floorName(item.remote.floorId) }} ·
+                      {{ item.connection.accessibility === 'ACCESSIBLE' ? 'Accesible' : item.connection.accessibility === 'INACCESSIBLE' ? 'No accesible' : 'Sin verificar' }} ·
+                      {{ item.connection.distanceMeters }} m · costo {{ item.connection.weight + item.connection.verticalPenalty }}
+                    </p>
+                  }
+                  <p class="hint">Edita estas conexiones en «Conexiones entre pisos».</p>
+                </fieldset>
+              }
               <button type="submit" class="primary">Aplicar cambios</button>
               <button type="button" class="outline danger" (click)="deleteSelected()">Eliminar nodo</button>
               <button type="button" (click)="activeEditor().select(null)">Deseleccionar</button>
@@ -311,6 +340,9 @@
               <dt>Puertas</dt><dd>{{ counts.doors }}</dd>
               <dt>Sin conexión</dt><dd>{{ isolated().length }}</dd>
             </dl>
+            @if (scaleProvisional()) {
+              <p class="hint">La escala es estimada. Calíbrala antes de publicar; puedes guardar el borrador.</p>
+            }
             <h3>Ambientes</h3>
             <ul class="items">
               @for (zone of proposal()?.zones ?? []; track zone.id) {
@@ -328,6 +360,66 @@
             </dl>
             <p class="hint">Selecciona un nodo o una arista para editar sus propiedades.</p>
           }
+        } @else if (tab() === 'reconciliation') {
+          <section class="reconciliation-panel" aria-label="Revisión de cambios del plano">
+            <h2>Reconciliar ambientes</h2>
+            <p class="hint">Confirma cómo aplicar los cambios detectados. Tus ediciones del mapa se conservan durante la revisión.</p>
+
+            @if (automaticReconciliation().length > 0) {
+              <h3>Correspondencias automáticas</h3>
+              <ul class="reconciliation-list automatic-list">
+                @for (zone of automaticReconciliation(); track zone.id) {
+                  <li><span class="status-mark success-mark">✓</span><span><strong>{{ zone.name }}</strong><small>Identidad y datos conservados</small></span></li>
+                }
+              </ul>
+            }
+
+            <h3>Revisión manual</h3>
+            @if (reconciliationReview().length === 0) {
+              <p class="hint">No hay cambios pendientes.</p>
+            } @else {
+              <ul class="reconciliation-list">
+                @for (item of reconciliationReview(); track $index; let index = $index) {
+                  <li class="reconciliation-item" [class.resolved]="!!reconciliationDecisions()[index]">
+                    <button type="button" class="reconciliation-focus" (click)="focusReconciliation(item)">
+                      <span><strong>{{ reconciliationChangeLabel(item) }}</strong><small>{{ item.reason }}</small></span>
+                    </button>
+                    @if (affectedDestinationNames(item).length > 0 || affectedVerticalConnections(item).length > 0) {
+                      <div class="affected-elements">
+                        @for (name of affectedDestinationNames(item); track name) { <span>Destino: {{ name }}</span> }
+                        @for (connection of affectedVerticalConnections(item); track connection) { <span>{{ connection }}</span> }
+                      </div>
+                    }
+                    @if (reconciliationDecisions()[index]; as decision) {
+                      <div class="decision-row"><span class="decision-badge">{{ reconciliationDecisionLabel(decision) }}</span>
+                        @if (decision.action !== 'DISCARDED') {
+                          <button type="button" class="text-button" (click)="undoReconciliation(index)">Cambiar decisión</button>
+                        }
+                      </div>
+                    } @else {
+                      <label class="reassign-field">Reasignar datos a
+                        <select #targetZone>
+                          <option value="">Selecciona un ambiente</option>
+                          @for (zone of proposal()?.zones ?? []; track zone.id) { <option [value]="zone.id">{{ zone.name }}</option> }
+                        </select>
+                      </label>
+                      <div class="review-actions">
+                        <button type="button" class="primary" (click)="approveReconciliation(index)">Aprobar</button>
+                        <button type="button" class="outline" [disabled]="!targetZone.value"
+                          (click)="reassignReconciliation(index, targetZone.value)">Reasignar</button>
+                        <button type="button" class="outline danger" (click)="discardReconciliation(index)">Descartar</button>
+                      </div>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+            @if (mandatoryPendingReconciliation().length + invalidReassignments().length > 0) {
+              <p class="reconciliation-block" role="status">Resuelve {{ mandatoryPendingReconciliation().length + invalidReassignments().length }} conflicto(s) obligatorio(s) para aplicar la propuesta.</p>
+            } @else {
+              <p class="reconciliation-ready" role="status">Revisión completa. La propuesta puede aplicarse al borrador.</p>
+            }
+          </section>
         } @else {
           @if (proposal()) {
             @if (alerts().length === 0) {

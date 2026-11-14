@@ -1,16 +1,17 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Observable, Subject, catchError, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { Observable, Subject, catchError, finalize, firstValueFrom, forkJoin, of, switchMap } from 'rxjs';
 import { Beacon, FloorPlanBounds } from '../../../domain/model/beacon.model';
 import { Floor, Site } from '../../../domain/model/site-floor.model';
-import { BEACONS_PORT } from '../../../application/planning.ports';
+import { BEACONS_PORT, FLOOR_PLANS_PORT } from '../../../application/planning.ports';
 import { SITES_PORT } from '../../../application/planning.ports';
 import { AdminShellComponent } from '../../../../shared/presentation/admin-shell/admin-shell.component';
-import { BeaconPosition, MAC_PATTERN, UUID_PATTERN, clampToPlan, isPlaced } from '../../../domain/model/beacon-rules';
+import { BeaconPosition, MAC_PATTERN, UUID_PATTERN, clampToPlan, hasValidPlacement, isInsidePlan } from '../../../domain/model/beacon-rules';
 import { approximateRangeMeters, toSaveRequest } from '../../../application/beacon-form';
+import { renderPdfPreview } from '../floor-plan-calibration/plan-preview';
 
 const PAGE_SIZE = 6;
 const LEGACY_IDENTIFIER = /^[a-z0-9:_-]{4,100}$/i;
@@ -25,9 +26,10 @@ const trimmed: ValidatorFn = control =>
   templateUrl: './beacons-management.component.html',
   styleUrl: './beacons-management.component.css'
 })
-export class BeaconsManagementComponent implements OnInit {
+export class BeaconsManagementComponent implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder).nonNullable;
   private readonly beaconsApi = inject(BEACONS_PORT);
+  private readonly floorPlansApi = inject(FLOOR_PLANS_PORT);
   private readonly sitesApi = inject(SITES_PORT);
   private readonly destroyRef = inject(DestroyRef);
   private readonly siteSelection = new Subject<string | null>();
@@ -38,6 +40,9 @@ export class BeaconsManagementComponent implements OnInit {
   readonly floors = signal<Floor[]>([]);
   readonly beacons = signal<Beacon[]>([]);
   readonly plans = signal<FloorPlanBounds[]>([]);
+  readonly planImages = signal<Record<string, string>>({});
+  private imageRevision = 0;
+  private readonly loadingImages = new Set<string>();
   readonly loading = signal(true);
   readonly loadFailed = signal(false);
   readonly error = signal<string | null>(null);
@@ -93,11 +98,13 @@ export class BeaconsManagementComponent implements OnInit {
     return floors.find(floor => floor.id === this.floorFilter()) ?? floors[0] ?? null;
   });
   readonly panelBeacons = computed(() => this.beacons().filter(beacon => beacon.floorId === this.panelFloor()?.id));
-  readonly panelPlaced = computed(() => this.panelBeacons().filter(isPlaced));
-  readonly panelUnplaced = computed(() => this.panelBeacons().filter(beacon => !isPlaced(beacon)));
+  readonly panelPlaced = computed(() => this.panelBeacons().filter(beacon => this.placed(beacon)));
+  readonly panelUnplaced = computed(() => this.panelBeacons().filter(beacon => !this.placed(beacon)));
   readonly panelBounds = computed(() => this.boundsFor(this.panelFloor()?.id ?? null));
   readonly formBounds = computed(() => this.boundsFor(this.form.controls.floorId.value || null));
-  readonly canActivate = computed(() => this.position() !== null);
+  readonly canActivate = computed(() => isInsidePlan(this.position(), this.formBounds()));
+
+  ngOnDestroy(): void { this.clearPlanImages(); }
 
   ngOnInit(): void {
     this.siteSelection.pipe(
@@ -105,6 +112,7 @@ export class BeaconsManagementComponent implements OnInit {
         this.beacons.set([]);
         this.floors.set([]);
         this.plans.set([]);
+        this.clearPlanImages();
         if (!id) return of(null);
         this.loading.set(true);
         return forkJoin({
@@ -126,6 +134,7 @@ export class BeaconsManagementComponent implements OnInit {
       this.floors.set([...result.floors].sort((a, b) => a.number - b.number));
       this.beacons.set(result.beacons);
       this.plans.set(result.plans);
+      this.ensurePlanImage(this.panelFloor()?.id ?? null);
     });
     this.reload();
   }
@@ -160,7 +169,10 @@ export class BeaconsManagementComponent implements OnInit {
   }
 
   setQuery(value: string): void { this.query.set(value); this.page.set(0); }
-  setFloorFilter(value: string): void { this.floorFilter.set(value); this.page.set(0); }
+  setFloorFilter(value: string): void {
+    this.floorFilter.set(value); this.page.set(0);
+    this.ensurePlanImage(this.panelFloor()?.id ?? null);
+  }
   setStatusFilter(value: string): void {
     this.statusFilter.set(value === 'active' || value === 'inactive' ? value : 'all');
     this.page.set(0);
@@ -173,7 +185,7 @@ export class BeaconsManagementComponent implements OnInit {
 
   displayName(beacon: Beacon): string { return beacon.name ?? beacon.identifier; }
   range(beacon: Beacon): number | null { return approximateRangeMeters(beacon.txPowerDbm); }
-  placed(beacon: Beacon): boolean { return isPlaced(beacon); }
+  placed(beacon: Beacon): boolean { return hasValidPlacement(beacon, this.boundsFor(beacon.floorId)); }
   formRange(): number | null { return approximateRangeMeters(this.form.controls.txPowerDbm.value); }
 
   openCreate(): void {
@@ -184,6 +196,7 @@ export class BeaconsManagementComponent implements OnInit {
       floorId: this.panelFloor()?.id ?? '', active: false
     });
     this.position.set(null);
+    this.ensurePlanImage(this.form.controls.floorId.value);
   }
 
   openEdit(beacon: Beacon): void {
@@ -194,7 +207,8 @@ export class BeaconsManagementComponent implements OnInit {
       major: beacon.major, minor: beacon.minor, txPowerDbm: beacon.txPowerDbm ?? -59,
       floorId: beacon.floorId, active: beacon.active
     });
-    this.position.set(isPlaced(beacon) ? { x: beacon.x as number, y: beacon.y as number } : null);
+    this.position.set(this.placed(beacon) ? { x: beacon.x as number, y: beacon.y as number } : null);
+    this.ensurePlanImage(beacon.floorId);
   }
 
   closeDrawer(force = false): void {
@@ -235,6 +249,35 @@ export class BeaconsManagementComponent implements OnInit {
   onFloorChange(): void {
     // A position belongs to one floor plan, so changing floor discards it.
     this.clearPosition();
+    this.ensurePlanImage(this.form.controls.floorId.value);
+  }
+
+  private async ensurePlanImage(floorId: string | null): Promise<void> {
+    const siteId = this.siteId();
+    const versionId = this.boundsFor(floorId)?.planVersionId;
+    if (!siteId || !floorId || !versionId || this.planImages()[floorId] || this.loadingImages.has(floorId)) return;
+    this.loadingImages.add(floorId);
+    const revision = this.imageRevision;
+    try {
+      const response = await firstValueFrom(this.floorPlansApi.original(siteId, floorId, versionId));
+      if (!response.body || revision !== this.imageRevision) return;
+      const image = (response.body.type === 'application/pdf'
+        || response.headers.get('Content-Type')?.startsWith('application/pdf'))
+        ? await renderPdfPreview(response.body) : response.body;
+      if (revision !== this.imageRevision) return;
+      this.planImages.update(images => ({ ...images, [floorId]: URL.createObjectURL(image) }));
+    } catch {
+      // The positions remain available when the original plan cannot be displayed.
+    } finally {
+      if (revision === this.imageRevision) this.loadingImages.delete(floorId);
+    }
+  }
+
+  private clearPlanImages(): void {
+    this.imageRevision++;
+    for (const url of Object.values(this.planImages())) URL.revokeObjectURL(url);
+    this.planImages.set({});
+    this.loadingImages.clear();
   }
 
   save(): void {
@@ -273,6 +316,10 @@ export class BeaconsManagementComponent implements OnInit {
   toggleActive(beacon: Beacon): void {
     const siteId = this.siteId();
     if (!siteId || this.busyBeaconId()) return;
+    if (!beacon.active && !this.placed(beacon)) {
+      this.error.set('Ubica esta baliza dentro del plano antes de activarla.');
+      return;
+    }
     this.success.set(null);
     this.error.set(null);
     this.busyBeaconId.set(beacon.id);
@@ -308,7 +355,8 @@ export class BeaconsManagementComponent implements OnInit {
 
   private setPosition(x: number, y: number): void {
     const bounds = this.formBounds();
-    this.position.set(bounds ? clampToPlan(x, y, bounds.widthUnits, bounds.heightUnits) : { x: Math.max(0, x), y: Math.max(0, y) });
+    if (!bounds) return;
+    this.position.set(clampToPlan(x, y, bounds.widthUnits, bounds.heightUnits));
   }
 
   private boundsFor(floorId: string | null): FloorPlanBounds | null {

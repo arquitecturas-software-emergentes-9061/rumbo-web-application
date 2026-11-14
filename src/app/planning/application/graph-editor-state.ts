@@ -7,6 +7,7 @@ import {
   upsertDestination
 } from '../domain/model/graph-model';
 import { GraphHistory } from './graph-history';
+import { verticalConnectionsForFloor } from '../domain/model/vertical-connection';
 import { GraphAlert, validateGraph } from '../domain/model/graph-validation';
 import { ModelProposal } from '../domain/model/plan-interpretation';
 import { ConnectionEnd, reconnectConnection } from '../domain/model/reconnect-connection';
@@ -49,6 +50,7 @@ export class GraphEditorState {
     const ids = new Set(this.floorNodes().map(node => node.id));
     return this.graph().connections.filter(item => ids.has(item.sourceNodeId) && ids.has(item.targetNodeId));
   });
+  readonly floorVerticalConnections = computed(() => verticalConnectionsForFloor(this.graph(), this.floorId()));
   readonly alerts = computed<GraphAlert[]>(() => validateGraph(this.graph(), this.plans()));
   readonly selectedNode = computed<GraphNode | null>(() => {
     const current = this.selection();
@@ -142,12 +144,17 @@ export class GraphEditorState {
 
   wallClick(id: string, fraction = 0.5): void {
     if (this.tool() === 'door') {
-      const door: MapDoor = { id: this.newId(), wallId: id, from: Math.max(0, fraction - 0.08), to: Math.min(1, fraction + 0.08) };
-      if (!validDoor(door, this.graph())) { this.feedback.set('La abertura se superpone con otra puerta.'); return; }
-      const next = { ...this.graph(), doors: [...(this.graph().doors ?? []), door] };
-      this.commit(next); this.select({ kind: 'door', id: door.id }); this.feedback.set(null); return;
+      this.addDoor(id, Math.max(0, fraction - 0.08), Math.min(1, fraction + 0.08)); return;
     }
     this.select({ kind: 'wall', id });
+  }
+
+  addDoor(wallId: string, from: number, to: number): boolean {
+    const door: MapDoor = { id: this.newId(), wallId, from, to };
+    if (!validDoor(door, this.graph())) { this.feedback.set('La abertura debe estar sobre un muro y no superponerse con otra puerta.'); return false; }
+    const next = { ...this.graph(), doors: [...(this.graph().doors ?? []), door] };
+    this.commit(next); this.select({ kind: 'door', id: door.id }); this.feedback.set(null);
+    return true;
   }
 
   doorClick(id: string): void { this.select({ kind: 'door', id }); }
@@ -223,14 +230,28 @@ export class GraphEditorState {
     const plan = this.plan();
     if (!plan || plan.metersPerUnit === null) return false;
     const generated = applyProposal(this.graph(), proposal, plan, this.newId);
-    const walls = (this.graph().walls ?? []).filter(wall => wall.floorId !== plan.floorId);
-    const retainedIds = new Set(walls.map(wall => wall.id));
-    const doors = (this.graph().doors ?? []).filter(door => retainedIds.has(door.wallId));
+    const walls = [...(this.graph().walls ?? [])];
+    const doors = [...(this.graph().doors ?? [])];
     const geometry = editedGeometry ? {
-      walls: [...walls, ...(editedGeometry.walls ?? []).map(wall => ({ ...wall,
-        floorId: plan.floorId, planVersionId: plan.planVersionId }))],
-      doors: [...doors, ...(editedGeometry.doors ?? [])]
+      walls: [...walls], doors: [...doors]
     } : proposalGeometry(proposal, plan, { ...generated, walls, doors }, this.newId);
+    if (editedGeometry) {
+      const wallIds = new Map<string, string>();
+      for (const candidate of editedGeometry.walls ?? []) {
+        const match = geometry.walls.find(wall => wall.planVersionId === plan.planVersionId
+          && ((Math.hypot(wall.x1 - candidate.x1, wall.y1 - candidate.y1) < 1e-3
+            && Math.hypot(wall.x2 - candidate.x2, wall.y2 - candidate.y2) < 1e-3)
+            || (Math.hypot(wall.x1 - candidate.x2, wall.y1 - candidate.y2) < 1e-3
+              && Math.hypot(wall.x2 - candidate.x1, wall.y2 - candidate.y1) < 1e-3)));
+        wallIds.set(candidate.id, match?.id ?? candidate.id);
+        if (!match) geometry.walls.push({ ...candidate, floorId: plan.floorId, planVersionId: plan.planVersionId });
+      }
+      for (const candidate of editedGeometry.doors ?? []) {
+        const door = { ...candidate, wallId: wallIds.get(candidate.wallId) ?? candidate.wallId };
+        if (!geometry.doors.some(item => item.wallId === door.wallId
+          && Math.abs(item.from - door.from) < 1e-3 && Math.abs(item.to - door.to) < 1e-3)) geometry.doors.push(door);
+      }
+    }
     this.commit({ ...generated, walls: geometry.walls, doors: geometry.doors });
     this.selection.set(null);
     return true;

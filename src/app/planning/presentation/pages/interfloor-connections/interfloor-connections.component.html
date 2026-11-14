@@ -38,18 +38,19 @@
       <div class="card table-scroll">
         <table>
           <thead><tr><th scope="col">Tipo</th><th scope="col">Origen</th><th scope="col">Destino</th>
-            <th scope="col">Accesibilidad</th><th scope="col">Acciones</th></tr></thead>
+            <th scope="col">Movilidad</th><th scope="col">Costo</th><th scope="col">Acciones</th></tr></thead>
           <tbody>
             @for (row of links(); track row.link.id) {
-              <tr><th scope="row">{{ typeName(row.link.type) }}<small>{{ row.link.distanceMeters | number:'1.0-2' }} m</small></th>
+              <tr><th scope="row">{{ typeName(row.link.type) }}<small>{{ row.link.distanceMeters | number:'1.0-2' }} m · {{ row.link.bidirectional ? 'Ambos sentidos' : 'Un sentido' }}</small></th>
                 <td>{{ floorName(row.start.floorId) }}<small>{{ nodeName(row.start) }}</small></td>
                 <td>{{ floorName(row.end.floorId) }}<small>{{ nodeName(row.end) }}</small></td>
-                <td>{{ access[row.link.accessibility] }}</td>
+                <td>{{ access[row.link.accessibility] }}<small>{{ row.link.accessibility === 'ACCESSIBLE' ? 'Apta para rutas accesibles' : 'Excluida de rutas accesibles' }}</small></td>
+                <td>{{ row.link.weight + row.link.verticalPenalty | number:'1.0-2' }}<small>Base {{ row.link.weight | number:'1.0-2' }} + vertical {{ row.link.verticalPenalty | number:'1.0-2' }}</small></td>
                 <td><button class="secondary" type="button" (click)="open(panel, row.link)"
                   [disabled]="stale()" [attr.aria-label]="'Editar ' + typeName(row.link.type)">Editar</button></td>
               </tr>
             } @empty {
-              <tr><td colspan="5">Todavía no hay conexiones entre pisos en este borrador.</td></tr>
+              <tr><td colspan="6">Todavía no hay conexiones entre pisos en este borrador.</td></tr>
             }
           </tbody>
         </table>
@@ -63,8 +64,8 @@
             <text x="10" [attr.y]="18 + 36 * index">{{ floorName(id).slice(0, 19) }}</text>
           }
           @for (edge of diagram(); track edge.id) {
-            <g [class.accessible]="edge.accessible">
-              <title>{{ typeName(edge.type) }}</title>
+            <g [class.accessible]="edge.accessibility === 'ACCESSIBLE'" [class.inaccessible]="edge.accessibility === 'INACCESSIBLE'">
+              <title>{{ typeName(edge.type) }} · {{ access[edge.accessibility] }}</title>
               <line [attr.x1]="edge.x" [attr.x2]="edge.x" [attr.y1]="edge.y1" [attr.y2]="edge.y2"
                 [attr.stroke-dasharray]="edge.type === 'STAIRS' ? '4 3' : null"/>
               <circle [attr.cx]="edge.x" [attr.cy]="edge.y1" r="3"/>
@@ -72,7 +73,7 @@
             </g>
           }
         </svg>
-        <p>Verde · accesible declarada. Trazo discontinuo · escalera.</p>
+        <p>Verde · accesible. Rojo · no accesible. Azul · sin verificar. Trazo discontinuo · escalera.</p>
       </aside>
     </div>
   }

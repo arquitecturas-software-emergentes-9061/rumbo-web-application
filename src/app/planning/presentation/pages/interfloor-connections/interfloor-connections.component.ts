@@ -9,6 +9,8 @@ import { AdminShellComponent } from '../../../../shared/presentation/admin-shell
 import { Accessibility, DraftSnapshot, VerticalType } from '../../../application/draft-graph.contracts';
 import { GraphConnection, GraphNode } from '../../../domain/model/map-graph.types';
 import { DRAFT_GRAPH_PORT } from '../../../application/planning.ports';
+import { SaveVerticalConnectionUseCase } from '../../../application/save-vertical-connection.use-case';
+import { InvalidVerticalConnection } from '../../../domain/model/vertical-connection';
 import { MapSectionNavigationComponent } from '../../components/map-section-navigation/map-section-navigation.component';
 
 const typeLabels: Record<VerticalType, string> = { ELEVATOR: 'Ascensor', STAIRS: 'Escalera', RAMP: 'Rampa' };
@@ -25,6 +27,7 @@ const accessLabels: Record<Accessibility, string> = {
 export class InterfloorConnectionsComponent {
   private readonly sitesApi = inject(SITES_PORT);
   private readonly graphs = inject(DRAFT_GRAPH_PORT);
+  private readonly saveConnection = inject(SaveVerticalConnectionUseCase);
   private readonly route = inject(ActivatedRoute);
   private initialFloorId = this.route.snapshot.queryParamMap.get('floorId');
   private request = 0;
@@ -78,7 +81,7 @@ export class InterfloorConnectionsComponent {
     return this.links().map(({ link, start, end }, index, links) => ({
       id: link.id, type: link.type, x: 152 + (index + 1) * 135 / (links.length + 1),
       y1: 25 + 36 * rows.indexOf(start.floorId), y2: 25 + 36 * rows.indexOf(end.floorId),
-      accessible: link.accessibility === 'ACCESSIBLE',
+      accessibility: link.accessibility,
     }));
   });
 
@@ -208,7 +211,7 @@ export class InterfloorConnectionsComponent {
     this.saving.set(true);
     const request = this.request;
     try {
-      const saved = await firstValueFrom(this.graphs.save(current, {
+      const saved = await firstValueFrom(this.saveConnection.execute(current, {
         id: this.editing()?.id ?? crypto.randomUUID(), sourceNodeId: from.id, targetNodeId: to.id,
         type: this.type(), distanceMeters: distance, weight, verticalPenalty: penalty,
         accessibility: this.accessibility(), bidirectional: this.bidirectional(),
@@ -220,9 +223,38 @@ export class InterfloorConnectionsComponent {
       this.dialog = null;
     } catch (error) {
       if (request !== this.request) return;
-      if (error instanceof HttpErrorResponse && (error.status === 412 || error.status === 409)) {
+      if (error instanceof InvalidVerticalConnection) {
+        const messages: Record<string, string> = {
+          MISSING_NODE: 'Uno de los nodos ya no está disponible.',
+          SAME_FLOOR: 'Elige nodos de dos pisos distintos.',
+          INVALID_TYPE: 'Elige un ascensor, una escalera o una rampa y clasifica su accesibilidad.',
+          INVALID_MEASURES: 'Ingresa distancia y costo positivos, y penalización no negativa.',
+          DUPLICATE: 'Ya existe una conexión de ese tipo entre esos nodos.',
+          INVALID_EDIT: 'Esta conexión ya no es vertical. Recarga el borrador.',
+        };
+        this.formError.set(messages[error.issue]);
+      } else if (error instanceof HttpErrorResponse && error.status === 412) {
+        try {
+          const latest = await firstValueFrom(this.graphs.load(current.graph.siteId));
+          if (request !== this.request) return;
+          this.snapshot.set(latest);
+          const before = current.graph.connections.find(item => item.id === this.editing()?.id);
+          const after = latest.graph.connections.find(item => item.id === this.editing()?.id);
+          if (this.editing() && JSON.stringify(before) !== JSON.stringify(after)) {
+            this.stale.set(true);
+            this.formError.set('Otra persona modificó esta conexión. Recarga y revisa su versión antes de editarla.');
+          } else {
+            this.formError.set('El borrador cambió en otra parte. Se cargó la versión reciente y se conservaron tus datos. Revísalos y vuelve a guardar.');
+          }
+        } catch {
+          if (request === this.request) {
+            this.stale.set(true);
+            this.formError.set('El borrador cambió y no se pudo recuperar. Recárgalo antes de guardar.');
+          }
+        }
+      } else if (error instanceof HttpErrorResponse && error.status === 409) {
         this.stale.set(true);
-        this.formError.set('El borrador cambió. Recárgalo antes de volver a guardar.');
+        this.formError.set('Esta versión ya no es un borrador editable. Recarga el mapa.');
       } else if (error instanceof HttpErrorResponse && error.status === 422) {
         const issue = error.error?.issues?.[0];
         const messages: Record<string, string> = {

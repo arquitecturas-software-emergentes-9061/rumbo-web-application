@@ -165,12 +165,15 @@ export function applyProposal(graph: EditorGraph, proposal: ModelProposal, plan:
   const destinations = [...kept.destinations];
   const zoneById = new Map(proposal.zones.map(zone => [zone.id, zone]));
   for (const node of proposal.nodes) {
-    const point = clampPoint(plan, node.x, node.y);
+    // Keep the validated precision of generated intersections with door axes.
+    const point = { x: Math.min(Math.max(node.x, 0), plan.widthUnits),
+      y: Math.min(Math.max(node.y, 0), plan.heightUnits) };
     // Structural roles distinguish an entrance/door from a destination at nearby coordinates.
     // Preserve exact generated route geometry; proximity-only reconciliation is legacy behavior.
     const near = destinationNodes.find(existing => node.role == null
       ? Math.hypot(existing.x - point.x, existing.y - point.y) <= snap
-      : node.role === 'ROOM' && Math.hypot(existing.x - point.x, existing.y - point.y) <= 1e-6);
+      : (node.role === 'ROOM' || node.role === 'DESTINATION')
+        && Math.hypot(existing.x - point.x, existing.y - point.y) <= 1e-6);
     if (near) { ids.set(node.id, near.id); continue; }
     const id = newId();
     const zone = zoneById.get(node.id);
