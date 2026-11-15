@@ -5,14 +5,14 @@ import { restrictionFrom } from '../../domain/model/subscription-restriction.mod
 import { SubscriptionRestrictionStore } from '../../application/subscription-restriction.store';
 
 /**
- * Turns plan restrictions answered by the API into a visible notice (WI-US23-03). The error is passed on unchanged,
- * so each page still handles its own failure state.
+ * Turns plan restrictions answered by the API into a visible notice (WI-US23-03, PR-99). The error is passed on
+ * unchanged and the request is never retried, so each page still handles its own failure state.
  */
 export const subscriptionRestrictionInterceptor: HttpInterceptorFn = (req, next) => {
   const store = inject(SubscriptionRestrictionStore);
   return next(req).pipe(catchError((error: unknown) => {
     if (error instanceof HttpErrorResponse) {
-      const restriction = restrictionFrom(error.status, error.error);
+      const restriction = restrictionFrom(error.status, error.error, req.url);
       if (restriction) store.report(restriction);
     }
     return throwError(() => error);

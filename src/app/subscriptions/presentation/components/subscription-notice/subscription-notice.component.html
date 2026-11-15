@@ -7,6 +7,9 @@
       <strong id="subscription-notice-title">{{ title() }}</strong>
       <p>{{ detail() }}</p>
     </div>
-    <button type="button" (click)="dismiss()" aria-label="Cerrar aviso del plan">Entendido</button>
+    <div class="actions">
+      <a [routerLink]="action().link" (click)="dismiss()">{{ action().label }}</a>
+      <button type="button" (click)="dismiss()" aria-label="Cerrar aviso del plan">Entendido</button>
+    </div>
   </section>
 }
