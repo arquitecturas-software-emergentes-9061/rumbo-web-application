@@ -68,3 +68,14 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+
+## URL del API en producción
+
+El build de producción (`npm run build`, el que ejecuta Vercel) toma la dirección del API de la variable
+`API_URL` y genera `src/environments/environment.production.ts` con `scripts/set-api-url.mjs`.
+
+- En Vercel: **Settings → Environment Variables → `API_URL`**, por ejemplo `https://rumbo-api-demo.onrender.com`
+  (se acepta con o sin `/api/v1` al final). Se puede definir distinta para Production y Preview.
+- Si `API_URL` no está definida se usa `https://rumbo-api-demo.onrender.com/api/v1`.
+- En desarrollo (`ng serve`) se sigue usando `http://localhost:8080/api/v1`.
+- El API debe permitir el origen de la web: en Render, `CORS_ALLOWED_ORIGINS` tiene que incluir el dominio de Vercel.
