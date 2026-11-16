@@ -1,0 +1,90 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <div class="heading-row"><h1>Pago / Configuración de la suscripción</h1><span>Pago cifrado</span></div>
+  </header>
+  <ol class="steps" aria-label="Pasos del pago">
+    <li><span aria-hidden="true">✓</span> Plan seleccionado</li>
+    <li aria-current="step">2 Datos de facturación <small>(actual)</small></li>
+    <li>3 Pago</li>
+  </ol>
+  @if (loading()) {
+    <p role="status">Cargando plan…</p>
+  } @else if (loadFailed()) {
+    <p class="alert" role="alert">No se pudieron cargar los planes.</p>
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (plan(); as selected) {
+    @if (prefillLoading()) { <p role="status">Recuperando datos de facturación…</p> }
+    @if (prefillError()) { <p class="alert" role="alert">{{ prefillError() }}</p> }
+    @if (incomplete()) {
+      <div class="alert" role="alert">
+        <strong>ACCIÓN REQUERIDA</strong>
+        <p>Datos de facturación incompletos — Completa los campos obligatorios para continuar con el pago.</p>
+      </div>
+    }
+    <div class="checkout-grid">
+      <form [formGroup]="form" (ngSubmit)="checkout()" novalidate>
+        <section class="card" aria-labelledby="billing-title">
+          <h2 id="billing-title">Datos fiscales y de facturación</h2>
+          <p class="muted">Las facturas electrónicas (SUNAT) requieren datos fiscales válidos.</p>
+          <div class="fields">
+            @for (field of fields; track field.key) {
+              <div class="field" [class.full]="field.full">
+                <label [for]="field.key">{{ field.label }}{{ field.optional ? '' : ' *' }}
+                  <small>{{ field.optional ? 'OPCIONAL' : 'OBLIGATORIO' }}</small>
+                </label>
+                <input [id]="field.key" [formControlName]="field.key"
+                  [type]="field.key === 'billingEmail' ? 'email' : 'text'"
+                  [attr.inputmode]="field.key === 'ruc' ? 'numeric' : null"
+                  [attr.aria-required]="!field.optional"
+                  [attr.aria-invalid]="!!fieldError(field.key)"
+                  [attr.aria-describedby]="field.key + '-help' + (fieldError(field.key) ? ' ' + field.key + '-error' : '')"
+                  [placeholder]="field.help" [readOnly]="checkingOut() || prefillLoading()">
+                <small [id]="field.key + '-help'" class="muted">{{ field.help }}</small>
+                @if (field.optional) { <small class="muted">Referencia interna opcional para tu área de pagos.</small> }
+                @if (fieldError(field.key); as message) {
+                  <p class="field-error" [id]="field.key + '-error'"><span aria-hidden="true">! </span>{{ message }}</p>
+                }
+              </div>
+            }
+          </div>
+        </section>
+        <div class="actions">
+          <a routerLink="/subscriptions/plans" [queryParams]="{ plan: selected.code }">← Volver a la selección de plan</a>
+          <button type="submit" class="primary-action"
+            [disabled]="checkingOut() || prefillLoading() || organizationLoading() || organizationLoadFailed() || !organization()">
+            {{ checkingOut() ? 'Redirigiendo a Stripe…' : 'Continuar al pago →' }}
+          </button>
+        </div>
+      </form>
+      <aside>
+        <section class="card" aria-labelledby="summary-title">
+          <h2 id="summary-title">Resumen del pedido</h2>
+          <span class="cycle">{{ selected.billingInterval === 'MONTH' ? 'Mensual' : selected.billingInterval }}</span>
+          <h3>{{ selected.name }}</h3>
+          <p class="price">S/ {{ selected.price.amount.toFixed(2) }}</p>
+          <p>Total: S/ {{ selected.price.amount.toFixed(2) }} {{ selected.price.currency }} / mes</p>
+          <p class="muted">Incluye IGV</p>
+          @if (organizationLoading()) {
+            <p role="status">Cargando clínica…</p>
+          } @else if (organizationLoadFailed()) {
+            <p class="alert" role="alert">No se pudieron cargar los datos de tu clínica.</p>
+            <button type="button" class="outline" (click)="loadOrganization()">Reintentar</button>
+          } @else if (organization(); as clinic) {
+            <p>Contratará: {{ clinic.name }}</p>
+          } @else {
+            <p class="alert" role="alert">Registra los datos de tu clínica antes de contratar</p>
+            <a routerLink="/planning/sites">Registrar clínica</a>
+          }
+          @if (error()) { <p class="alert" role="alert">{{ error() }}</p> }
+        </section>
+        <section class="card support">
+          <h2>¿Necesitas ayuda?</h2>
+          <a href="mailto:soporte@rumbo.pe">soporte&#64;rumbo.pe</a>
+        </section>
+      </aside>
+    </div>
+  } @else {
+    <p class="alert" role="alert">El plan no es válido o ya no está disponible.</p>
+    <a routerLink="/subscriptions/plans">Volver a planes</a>
+  }
+</app-admin-shell>

@@ -1,0 +1,71 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Administración</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Suscripción</span>
+    </nav>
+    <h1>Mi suscripción</h1>
+    <p>Gestiona el plan de tu clínica, sus límites y renovaciones</p>
+  </header>
+  @if (loading()) {
+    <p role="status">Cargando tu suscripción…</p>
+  } @else if (error()) {
+    <p class="alert" role="alert">{{ error() }}</p>
+    <button class="outline" type="button" (click)="load()">Reintentar</button>
+  } @else if (subscription(); as current) {
+    @if (current.status === 'EXPIRED') {
+      <div class="alert" role="alert">
+        <strong>Suscripción vencida — modo restringido.</strong>
+        <p>Tu suscripción venció el {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}. No podrás registrar sedes, pisos ni balizas hasta renovar.</p>
+        <a class="primary-action" routerLink="/subscriptions/checkout" [queryParams]="{ plan: current.plan.code }">Renovar ahora</a>
+        <p class="renewal-note">Al confirmar el pago, el periodo se reinicia por 1 mes desde la fecha de pago.</p>
+      </div>
+    }
+    <div class="checkout-grid">
+    <section class="card" aria-labelledby="plan-title">
+      <h2 id="plan-title">{{ current.status === 'ACTIVE' ? 'Plan activo' : 'Plan actual' }}</h2>
+      <h3>{{ current.plan.name }}</h3>
+      <span class="badge" [class.badge--success]="current.status === 'ACTIVE'"
+        [class.badge--warning]="current.status === 'EXPIRED'">
+        {{ current.status === 'ACTIVE' ? 'Activa' : 'VENCIDA' }}
+      </span>
+      <p class="price">{{ current.plan.price.currency === 'PEN' ? 'S/' : current.plan.price.currency }} {{ current.plan.price.amount | number:'1.2-2' }} <span class="interval">{{ current.plan.billingInterval === 'MONTH' ? 'por mes' : current.plan.billingInterval }}</span></p>
+      @if (current.status === 'ACTIVE') {
+        <p>Vigente hasta {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+        <p>{{ current.daysRemaining === 1 ? 'Queda 1 día' : 'Quedan ' + current.daysRemaining + ' días' }}</p>
+      } @else {
+        <p>Venció el {{ current.currentPeriodEnd | date:'dd/MM/yyyy' }}</p>
+      }
+      <div class="actions">
+        <a class="outline" routerLink="/subscriptions/plans">Cambiar plan</a>
+        <div>
+          <a class="primary-action" routerLink="/subscriptions/checkout" [queryParams]="{ plan: current.plan.code }">Renovar ahora</a>
+          <p class="renewal-note muted">Al confirmar el pago, el periodo se reinicia por 1 mes desde la fecha de pago.</p>
+        </div>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="usage-title">
+      <h2 id="usage-title">Uso</h2>
+      <p class="muted">Consumo respecto a los límites del plan</p>
+      @for (item of usageItems; track item.key) {
+        @let usage = current.usage[item.key];
+        <div class="usage-item">
+          <div class="usage-label"><span>{{ item.label }}</span><span>{{ usage.used }}{{ usage.limit === null ? ' · ilimitado' : ' de ' + usage.limit }}</span></div>
+          @if (usage.limit !== null) {
+            <div class="usage-track" role="progressbar" [attr.aria-label]="item.label"
+              aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="usagePercentage(usage.used, usage.limit)"
+              [attr.aria-valuetext]="usage.used + ' de ' + usage.limit">
+              <div class="usage-fill" [style.width.%]="usagePercentage(usage.used, usage.limit)"></div>
+            </div>
+          }
+        </div>
+      }
+      <p class="muted">{{ current.status === 'EXPIRED' ? 'El uso se congela mientras la suscripción está vencida.' : 'El consumo se actualiza automáticamente al agregar o retirar sedes, pisos y balizas.' }}</p>
+    </section>
+    </div>
+  } @else {
+    <p>Aún no tienes una suscripción activa.</p>
+    <a class="primary-action" routerLink="/subscriptions/plans">Ver planes</a>
+  }
+</app-admin-shell>

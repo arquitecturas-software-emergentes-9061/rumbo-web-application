@@ -1,0 +1,163 @@
+<app-admin-shell [context]="siteName()">
+  <app-map-section-navigation active="connections" [siteName]="siteName()" [siteId]="siteId()"
+    [floors]="floors()" [floorId]="navigationFloorId()" [floorDisabled]="saving()"
+    (floorSelected)="navigationFloorId.set($event)" />
+  <header class="page-heading heading">
+    <div><h1>Conexiones entre pisos</h1><p>Configura ascensores, escaleras y rampas del borrador de la sede.</p></div>
+    <button class="primary" type="button" (click)="open(panel, null)" [disabled]="floorIds().length < 2 || stale() || loading()">
+      ＋ Agregar conexión
+    </button>
+  </header>
+  <div class="selector">
+    <label for="graph-site">Sede
+      <select id="graph-site" #site [value]="siteId()" (change)="loadSite(site.value)" [disabled]="saving()">
+        <option value="">Selecciona una sede</option>
+        @for (item of sites(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+      </select>
+    </label>
+    <button class="secondary" type="button" [disabled]="loading() || saving()"
+      (click)="siteId() ? reload() : loadSites()">Recargar borrador</button>
+  </div>
+
+  @if (loading()) { <p class="notice" role="status">Cargando el borrador…</p> }
+  @if (error()) { <p class="notice danger" role="alert">{{ error() }}</p> }
+  @if (notice()) { <p class="notice success" role="status">{{ notice() }}</p> }
+  @if (stale()) { <p class="notice danger" role="alert">El borrador cambió. Recarga antes de editar.</p> }
+  @if (noDraft()) { <p class="notice">Esta sede todavía no tiene un borrador de mapa.</p> }
+
+  @if (snapshot()) {
+    <section class="stats" aria-label="Resumen del borrador">
+      <p><strong>{{ floorIds().length }}</strong> pisos con nodos</p>
+      <p><strong>{{ links().length }}</strong> conexiones entre pisos</p>
+      <p><strong>{{ accessible() }}</strong> accesibles declaradas</p>
+    </section>
+    @if (floorIds().length < 2) {
+      <p class="notice">El borrador necesita nodos existentes en al menos dos pisos para agregar una conexión.</p>
+    }
+    <div class="workspace">
+      <div class="card table-scroll">
+        <table>
+          <thead><tr><th scope="col">Tipo</th><th scope="col">Origen</th><th scope="col">Destino</th>
+            <th scope="col">Movilidad</th><th scope="col">Costo</th><th scope="col">Acciones</th></tr></thead>
+          <tbody>
+            @for (row of links(); track row.link.id) {
+              <tr><th scope="row">{{ typeName(row.link.type) }}<small>{{ row.link.distanceMeters | number:'1.0-2' }} m · {{ row.link.bidirectional ? 'Ambos sentidos' : 'Un sentido' }}</small></th>
+                <td>{{ floorName(row.start.floorId) }}<small>{{ nodeName(row.start) }}</small></td>
+                <td>{{ floorName(row.end.floorId) }}<small>{{ nodeName(row.end) }}</small></td>
+                <td>{{ access[row.link.accessibility] }}<small>{{ row.link.accessibility === 'ACCESSIBLE' ? 'Apta para rutas accesibles' : 'Excluida de rutas accesibles' }}</small></td>
+                <td>{{ row.link.weight + row.link.verticalPenalty | number:'1.0-2' }}<small>Base {{ row.link.weight | number:'1.0-2' }} + vertical {{ row.link.verticalPenalty | number:'1.0-2' }}</small></td>
+                <td><button class="secondary" type="button" (click)="open(panel, row.link)"
+                  [disabled]="stale()" [attr.aria-label]="'Editar ' + typeName(row.link.type)">Editar</button></td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6">Todavía no hay conexiones entre pisos en este borrador.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <aside class="card diagram">
+        <h2>Diagrama de pisos</h2>
+        <p>Conexiones registradas en el borrador.</p>
+        <svg [attr.viewBox]="'0 0 300 ' + (14 + floorIds().length * 36)" role="img" aria-label="Diagrama esquemático de conexiones entre pisos">
+          @for (id of floorIds(); track id; let index = $index) {
+            <line x1="8" x2="292" [attr.y1]="25 + 36 * index" [attr.y2]="25 + 36 * index" class="level"/>
+            <text x="10" [attr.y]="18 + 36 * index">{{ floorName(id).slice(0, 19) }}</text>
+          }
+          @for (edge of diagram(); track edge.id) {
+            <g [class.accessible]="edge.accessibility === 'ACCESSIBLE'" [class.inaccessible]="edge.accessibility === 'INACCESSIBLE'">
+              <title>{{ typeName(edge.type) }} · {{ access[edge.accessibility] }}</title>
+              <line [attr.x1]="edge.x" [attr.x2]="edge.x" [attr.y1]="edge.y1" [attr.y2]="edge.y2"
+                [attr.stroke-dasharray]="edge.type === 'STAIRS' ? '4 3' : null"/>
+              <circle [attr.cx]="edge.x" [attr.cy]="edge.y1" r="3"/>
+              <circle [attr.cx]="edge.x" [attr.cy]="edge.y2" r="3"/>
+            </g>
+          }
+        </svg>
+        <p>Verde · accesible. Rojo · no accesible. Azul · sin verificar. Trazo discontinuo · escalera.</p>
+      </aside>
+    </div>
+  }
+
+  <dialog #panel aria-labelledby="connection-title" (cancel)="close($event)">
+    <header class="dialog-heading">
+      <div><h2 id="connection-title">{{ editing() ? 'Editar conexión' : 'Agregar conexión' }}</h2><p>{{ siteName() }}</p></div>
+      <button class="secondary" type="button" aria-label="Cerrar" (click)="close()" [disabled]="saving()">×</button>
+    </header>
+    <form (submit)="$event.preventDefault(); save()" novalidate>
+      <div class="dialog-body">
+        @if (formError()) {
+          <p class="notice danger" role="alert">{{ formError() }}</p>
+        }
+        <label for="connection-type">Tipo de conexión
+          <select id="connection-type" #kind [value]="type()" (change)="type.set($any(kind.value))">
+            <option value="ELEVATOR">Ascensor</option><option value="STAIRS">Escalera</option><option value="RAMP">Rampa</option>
+          </select>
+        </label>
+        <div class="pairs">
+          <label for="from-floor">Desde el piso
+            <select id="from-floor" #originFloor [value]="fromFloor()" (change)="setFloor('from', originFloor.value)">
+              <option value="">Selecciona un piso</option>
+              @for (id of floorIds(); track id) { <option [value]="id" [disabled]="id === toFloor()">{{ floorName(id) }}</option> }
+            </select>
+          </label>
+          <label for="from-node">Nodo de origen
+            <select id="from-node" #originNode [value]="from()" (change)="from.set(originNode.value)" [disabled]="!fromFloor()">
+              <option value="">Selecciona un nodo</option>
+              @for (node of fromNodes(); track node.id) { <option [value]="node.id">{{ nodeName(node) }}</option> }
+            </select>
+          </label>
+          <label for="to-floor">Hasta el piso
+            <select id="to-floor" #targetFloor [value]="toFloor()" (change)="setFloor('to', targetFloor.value)">
+              <option value="">Selecciona un piso</option>
+              @for (id of floorIds(); track id) { <option [value]="id" [disabled]="id === fromFloor()">{{ floorName(id) }}</option> }
+            </select>
+          </label>
+          <label for="to-node">Nodo de destino
+            <select id="to-node" #targetNode [value]="to()" (change)="to.set(targetNode.value)" [disabled]="!toFloor()">
+              <option value="">Selecciona un nodo</option>
+              @for (node of toNodes(); track node.id) { <option [value]="node.id">{{ nodeName(node) }}</option> }
+            </select>
+          </label>
+        </div>
+        <div class="pairs">
+          <label for="link-distance">Distancia real (m)
+            <input id="link-distance" #meters type="number" min="0" step="any" [value]="distance() ?? ''"
+              (input)="distance.set(meters.value ? meters.valueAsNumber : null)">
+          </label>
+          <label for="link-access">Accesibilidad
+            <select id="link-access" #accessibilityChoice [value]="accessibility()"
+              (change)="accessibility.set($any(accessibilityChoice.value))">
+              <option value="UNKNOWN">Sin verificar</option>
+              <option value="ACCESSIBLE">Accesible en silla de ruedas</option>
+              <option value="INACCESSIBLE">No accesible en silla de ruedas</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">Las rutas accesibles usan los enlaces declarados accesibles tras publicar el borrador.</p>
+        <label class="checkbox"><input type="checkbox" #both [checked]="bidirectional()" (change)="bidirectional.set(both.checked)">
+          Permitir el recorrido en ambos sentidos</label>
+        <details>
+          <summary>Costos de recorrido</summary>
+          <div class="pairs advanced">
+            <label for="link-weight">Costo base
+              <input id="link-weight" #cost type="number" min="0" step="any" [value]="weight() ?? ''"
+                (input)="weight.set(cost.value ? cost.valueAsNumber : null)" placeholder="Igual a la distancia">
+            </label>
+            <label for="link-penalty">Penalización vertical
+              <input id="link-penalty" #extra type="number" min="0" step="any" [value]="penalty() ?? ''"
+                (input)="penalty.set(extra.value ? extra.valueAsNumber : null)">
+            </label>
+          </div>
+        </details>
+      </div>
+      <footer>
+        <button class="secondary" type="button" (click)="close()" [disabled]="saving()">Cancelar</button>
+        @if (stale()) {
+          <button class="primary" type="button" (click)="reload()">Recargar borrador</button>
+        } @else {
+          <button class="primary" type="submit" [disabled]="saving()">{{ saving() ? 'Guardando…' : 'Guardar conexión' }}</button>
+        }
+      </footer>
+    </form>
+  </dialog>
+</app-admin-shell>

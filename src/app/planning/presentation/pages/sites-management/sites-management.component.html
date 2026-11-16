@@ -1,0 +1,240 @@
+<app-admin-shell [context]="selectedSite()?.name ?? null">
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Clínicas y sedes</span>
+    </nav>
+    <h1>Clínicas, sedes y pisos</h1>
+  </header>
+  @if (editor() === null && error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+  @if (success(); as message) {
+    <p class="success" role="status">{{ message }}</p>
+  }
+  @if (loading()) {
+    <p role="status">Cargando estructura de la clínica…</p>
+  } @else if (loadFailed()) {
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else {
+    <div class="columns">
+      <section class="card structure" aria-labelledby="structure-title">
+        <h2 id="structure-title">
+          Sedes y pisos
+          <small>{{ sites().length }} {{ sites().length === 1 ? 'sede' : 'sedes' }}</small>
+        </h2>
+        <p class="clinic-name">{{ organization()?.name ?? 'Clínica sin registrar' }}</p>
+        <ul class="tree">
+          @for (site of sites(); track site.id) {
+            <li>
+              <button
+                type="button"
+                class="tree-site"
+                [attr.aria-pressed]="site.id === selectedSiteId()"
+                [disabled]="saving()"
+                (click)="close(); selectSite(site.id)"
+              >
+                {{ site.name }}
+              </button>
+              @if (site.id === selectedSiteId()) {
+                <ul>
+                  @for (floor of floors(); track floor.id) {
+                    <li>
+                      {{ floor.name }} <small>Niv. {{ floor.number }}</small>
+                    </li>
+                  }
+                </ul>
+              }
+            </li>
+          }
+        </ul>
+        <button
+          type="button"
+          class="outline"
+          [class.primary]="!organization()"
+          [disabled]="saving()"
+          (click)="openClinic()"
+        >
+          {{ organization() ? 'Editar clínica' : 'Registrar clínica' }}
+        </button>
+        <button
+          type="button"
+          class="outline"
+          [disabled]="!organization() || saving()"
+          (click)="openSite()"
+        >
+          + Agregar sede
+        </button>
+      </section>
+
+      <div class="details">
+        @if (editor() === 'clinic') {
+          <section class="card" aria-labelledby="clinic-title">
+            <h2 id="clinic-title">Datos de la clínica</h2>
+            <form [formGroup]="clinicForm" (ngSubmit)="saveClinic()">
+              <label
+                >Nombre de la clínica <input required formControlName="name" maxlength="160"
+              /></label>
+              <label
+                >Código institucional <input required formControlName="code" maxlength="60"
+              /></label>
+              <label
+                >Correo de contacto
+                <input required formControlName="contactEmail" type="email" maxlength="254"
+              /></label>
+              <label>Teléfono <input formControlName="phone" type="tel" maxlength="40" /></label>
+              @if (clinicForm.invalid && clinicForm.touched) {
+                <p class="alert" role="alert">
+                  Completa los campos obligatorios con datos válidos.
+                </p>
+              }
+              @if (error(); as message) {
+                <p class="alert" role="alert">{{ message }}</p>
+              }
+              <div class="actions">
+                <button class="primary" type="submit" [disabled]="saving()">Guardar clínica</button>
+                <button type="button" [disabled]="saving()" (click)="close()">Cancelar</button>
+              </div>
+            </form>
+          </section>
+        } @else if (editor() === 'site') {
+          <section class="card" aria-labelledby="site-title">
+            <h2 id="site-title">{{ editingSiteId() ? 'Datos de la sede' : 'Nueva sede' }}</h2>
+            <form [formGroup]="siteForm" (ngSubmit)="saveSite()">
+              <label
+                >Nombre de la sede <input required formControlName="name" maxlength="120"
+              /></label>
+              <label
+                >Dirección
+                <input
+                  required
+                  formControlName="address"
+                  maxlength="200"
+                  (input)="duplicateAddress.set(false)"
+              /></label>
+              @if (siteForm.invalid && siteForm.touched) {
+                <p class="alert" role="alert">Completa el nombre y la dirección de la sede.</p>
+              }
+              @if (error(); as message) {
+                <div class="alert" role="alert">
+                  @if (duplicateAddress()) {
+                    <strong>Posible sede duplicada</strong>
+                  }
+                  <p>{{ message }}</p>
+                </div>
+              }
+              <div class="actions">
+                @if (duplicateAddress()) {
+                  <button
+                    class="primary"
+                    type="button"
+                    [disabled]="saving()"
+                    (click)="saveSite(true)"
+                  >
+                    Guardar de todas formas
+                  </button>
+                  <button type="button" (click)="duplicateAddress.set(false); error.set(null)">
+                    Editar dirección
+                  </button>
+                } @else {
+                  <button class="primary" type="submit" [disabled]="saving()">Guardar sede</button>
+                }
+                <button type="button" [disabled]="saving()" (click)="close()">Cancelar</button>
+              </div>
+            </form>
+          </section>
+        } @else if (selectedSite(); as site) {
+          <section class="card">
+            <div class="heading">
+              <h2>Datos de la sede</h2>
+              <button type="button" class="outline" (click)="openSite(site)">Editar sede</button>
+            </div>
+            <p>
+              <strong>{{ site.name }}</strong>
+            </p>
+            <p>{{ site.address ?? 'Sin dirección registrada' }}</p>
+          </section>
+        } @else {
+          <section class="card">
+            <h2>Datos de la sede</h2>
+            <p>
+              {{
+                organization()
+                  ? 'Agrega la primera sede de la clínica.'
+                  : 'Registra la clínica para agregar sus sedes.'
+              }}
+            </p>
+          </section>
+        }
+
+        @if (selectedSite(); as site) {
+          <section class="card" aria-labelledby="floors-title">
+            <div class="heading">
+              <div>
+                <h2 id="floors-title">Pisos</h2>
+                <p>{{ site.name }}</p>
+              </div>
+              <button
+                type="button"
+                class="outline"
+                [disabled]="saving() || floorsLoading()"
+                (click)="openFloor()"
+              >
+                + Nuevo piso
+              </button>
+            </div>
+            @if (editor() === 'floor') {
+              <form [formGroup]="floorForm" (ngSubmit)="saveFloor()">
+                <label
+                  >Nivel <input required type="number" step="1" formControlName="number"
+                /></label>
+                <label
+                  >Nombre del piso <input required formControlName="name" maxlength="100"
+                /></label>
+                <label>Descripción <input formControlName="description" maxlength="250" /></label>
+                @if (floorForm.invalid && floorForm.touched) {
+                  <p class="alert" role="alert">Ingresa un nivel entero y el nombre del piso.</p>
+                }
+                @if (error(); as message) {
+                  <p class="alert" role="alert">{{ message }}</p>
+                }
+                <div class="actions">
+                  <button type="submit" class="primary" [disabled]="saving()">Guardar piso</button>
+                  <button type="button" [disabled]="saving()" (click)="close()">Cancelar</button>
+                </div>
+              </form>
+            }
+            @if (floorsLoading()) {
+              <p role="status">Cargando pisos…</p>
+            } @else if (floorError(); as message) {
+              <p class="alert" role="alert">{{ message }}</p>
+              <button type="button" (click)="selectSite(site.id)">Reintentar</button>
+            } @else if (floors().length === 0) {
+              <p>Esta sede aún no tiene pisos registrados.</p>
+            } @else {
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Nivel</th>
+                    <th scope="col">Piso</th>
+                    <th scope="col">Descripción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (floor of floors(); track floor.id) {
+                    <tr>
+                      <td>{{ floor.number }}</td>
+                      <th scope="row">{{ floor.name }}</th>
+                      <td>{{ floor.description ?? '—' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </section>
+        }
+      </div>
+    </div>
+  }
+</app-admin-shell>

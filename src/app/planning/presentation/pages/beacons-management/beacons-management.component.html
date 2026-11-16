@@ -1,0 +1,330 @@
+<app-admin-shell [context]="site()?.name ?? null">
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <a routerLink="/planning/sites">Clínicas y sedes</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Balizas</span>
+    </nav>
+    <div class="heading-row">
+      <div>
+        <h1>
+          Balizas
+          <span class="count-badge">{{ beacons().length }} {{ beacons().length === 1 ? 'baliza registrada' : 'balizas registradas' }}</span>
+        </h1>
+        <p class="lead">Gestiona las balizas BLE, su piso y su posición en el plano.</p>
+      </div>
+      <div class="heading-actions">
+        @if (sites().length > 1) {
+          <label class="site-picker">
+            <span>Sede</span>
+            <select [value]="siteId() ?? ''" (change)="selectSite($any($event.target).value)">
+              @for (item of sites(); track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
+              }
+            </select>
+          </label>
+        }
+        <button type="button" class="primary" [disabled]="!site() || floors().length === 0 || loading()" (click)="openCreate()">
+          + Registrar baliza
+        </button>
+      </div>
+    </div>
+  </header>
+
+  @if (error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+  @if (success(); as message) {
+    <p class="success" role="status">{{ message }}</p>
+  }
+
+  @if (loading()) {
+    <p role="status">Cargando balizas…</p>
+  } @else if (loadFailed()) {
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (!site()) {
+    <section class="card">
+      <h2>Aún no hay sedes</h2>
+      <p>Registra una sede y sus pisos antes de agregar balizas.</p>
+      <a routerLink="/planning/sites" class="outline link-button">Ir a Clínicas y sedes</a>
+    </section>
+  } @else if (floors().length === 0) {
+    <section class="card">
+      <h2>La sede no tiene pisos</h2>
+      <p>Agrega al menos un piso a {{ site()?.name }} para registrar balizas.</p>
+      <a routerLink="/planning/sites" class="outline link-button">Ir a Clínicas y sedes</a>
+    </section>
+  } @else {
+    <div class="filters" role="search">
+      <label class="search">
+        <span class="visually-hidden">Buscar balizas</span>
+        <input type="search" placeholder="Buscar por nombre, MAC, UUID o Minor…" [value]="query()"
+          (input)="setQuery($any($event.target).value)" />
+      </label>
+      <label>
+        <span class="visually-hidden">Filtrar por piso</span>
+        <select [value]="floorFilter()" (change)="setFloorFilter($any($event.target).value)">
+          <option value="all">Piso: Todos</option>
+          @for (floor of floors(); track floor.id) {
+            <option [value]="floor.id">{{ floor.name }}</option>
+          }
+        </select>
+      </label>
+      <label>
+        <span class="visually-hidden">Filtrar por estado</span>
+        <select [value]="statusFilter()" (change)="setStatusFilter($any($event.target).value)">
+          <option value="all">Estado: Todos</option>
+          <option value="active">Activas</option>
+          <option value="inactive">Inactivas</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="columns">
+      <section class="card table-card" aria-labelledby="inventory-title">
+        <h2 id="inventory-title" class="visually-hidden">Inventario de balizas</h2>
+        @if (filtered().length === 0) {
+          <p class="empty">
+            {{ beacons().length === 0 ? 'Esta sede aún no tiene balizas registradas.' : 'Ninguna baliza coincide con los filtros.' }}
+          </p>
+        } @else {
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Baliza</th>
+                  <th scope="col">UUID</th>
+                  <th scope="col">Major</th>
+                  <th scope="col">Minor</th>
+                  <th scope="col">Potencia Tx</th>
+                  <th scope="col">Piso</th>
+                  <th scope="col">Posición</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (beacon of visible(); track beacon.id) {
+                  <tr>
+                    <th scope="row">
+                      <span class="beacon-name">{{ displayName(beacon) }}</span>
+                      @if (beacon.name) {
+                        <small class="mono">{{ beacon.identifier }}</small>
+                      }
+                    </th>
+                    <td class="mono uuid" [attr.title]="beacon.proximityUuid">{{ beacon.proximityUuid ?? '—' }}</td>
+                    <td>{{ beacon.major ?? '—' }}</td>
+                    <td>{{ beacon.minor ?? '—' }}</td>
+                    <td>{{ beacon.txPowerDbm === null ? '—' : beacon.txPowerDbm + ' dBm' }}</td>
+                    <td>{{ floorName(beacon.floorId) }}</td>
+                    <td>
+                      <span class="status" [class.ok]="placed(beacon)" [class.warn]="!placed(beacon)">
+                        {{ placed(beacon) ? '✓ Ubicada' : '✕ Sin ubicar' }}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="status" [class.ok]="beacon.active">{{ beacon.active ? 'Activo' : 'Inactiva' }}</span>
+                    </td>
+                    <td class="row-actions">
+                      <button type="button" class="outline" [attr.aria-label]="'Editar baliza ' + displayName(beacon)" (click)="openEdit(beacon)">
+                        Editar
+                      </button>
+                      <button type="button" class="outline"
+                        [disabled]="busyBeaconId() !== null || (!beacon.active && !placed(beacon))"
+                        [attr.title]="!beacon.active && !placed(beacon) ? 'Ubica esta baliza en el plano antes de activarla.' : null"
+                        (click)="toggleActive(beacon)">
+                        {{ beacon.active ? 'Desactivar' : 'Activar' }}
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+        <footer class="pager">
+          <span>{{ rangeLabel() }}</span>
+          <div class="actions">
+            <button type="button" class="outline" [disabled]="page() === 0" (click)="goToPage(page() - 1)">‹ Anterior</button>
+            <button type="button" class="outline" [disabled]="page() >= pageCount() - 1" (click)="goToPage(page() + 1)">Siguiente ›</button>
+          </div>
+        </footer>
+      </section>
+
+      <aside class="card floor-panel" aria-labelledby="floor-title">
+        @if (panelFloor(); as floor) {
+          <h2 id="floor-title">
+            {{ floor.name }}
+            <small class="pill">{{ panelPlaced().length }} ubicadas · {{ panelUnplaced().length }} sin ubicar</small>
+          </h2>
+          <p class="muted">Distribución de balizas</p>
+          @if (panelBounds(); as bounds) {
+            <div class="plan" role="img"
+              [attr.aria-label]="'Plano de ' + floor.name + ' con ' + panelPlaced().length + ' balizas ubicadas'"
+              [style.aspect-ratio]="bounds.widthUnits + ' / ' + bounds.heightUnits">
+              @if (planImages()[floor.id]; as image) { <img class="plan-image" [src]="image" alt="" /> }
+              @for (beacon of panelPlaced(); track beacon.id) {
+                <button type="button" class="dot" [class.off]="!beacon.active" [style.left.%]="dotLeft(beacon)" [style.top.%]="dotTop(beacon)"
+                  [attr.aria-label]="'Ubicar o mover ' + displayName(beacon)" (click)="openEdit(beacon); picking.set(true)">
+                  {{ displayName(beacon) }}
+                </button>
+              }
+            </div>
+          } @else {
+            <p class="notice">Este piso aún no tiene un plano en borrador. Carga y calibra un plano en Mapas para ubicar balizas.</p>
+          }
+          @if (panelUnplaced().length > 0) {
+            <ul class="unplaced" aria-label="Balizas sin ubicar">
+              @for (beacon of panelUnplaced(); track beacon.id) {
+                <li>
+                  <span>⚠ {{ displayName(beacon) }} (sin ubicar)</span>
+                  <button type="button" class="outline" (click)="openEdit(beacon)">Ubicar</button>
+                </li>
+              }
+            </ul>
+          }
+        }
+      </aside>
+    </div>
+  }
+
+  @if (drawer(); as current) {
+    <div class="backdrop" (click)="closeDrawer()"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" (keydown.escape)="closeDrawer()">
+      <header>
+        <div>
+          <small>Balizas / {{ current.beaconId ? 'Editar baliza' : 'Registrar baliza' }}</small>
+          <h2 id="drawer-title">{{ current.beaconId ? 'Editar baliza' : 'Registrar baliza' }}</h2>
+        </div>
+        <button type="button" class="close" aria-label="Cerrar panel" [disabled]="saving()" (click)="closeDrawer()">×</button>
+      </header>
+      <form [formGroup]="form" (ngSubmit)="save()" novalidate>
+        <label>Nombre de la baliza *
+          <input formControlName="name" maxlength="100" placeholder="Entrada este del hall principal" />
+          @if (form.controls.name.touched && form.controls.name.invalid) { <small class="field-error">Obligatorio.</small> }
+        </label>
+        <label>Dirección MAC *
+          <input formControlName="identifier" class="mono" placeholder="AC:23:3F:8A:11:C4" autocomplete="off" (input)="duplicate.set(false)" />
+          @if (form.controls.identifier.touched && form.controls.identifier.invalid) {
+            <small class="field-error">Usa el formato AA:BB:CC:DD:EE:FF.</small>
+          }
+        </label>
+        <fieldset>
+          <legend>Identificador de proximidad</legend>
+          <label>UUID *
+            <input formControlName="proximityUuid" class="mono" autocomplete="off" (input)="duplicate.set(false)" />
+            @if (form.controls.proximityUuid.touched && form.controls.proximityUuid.invalid) {
+              <small class="field-error">Ingresa un UUID válido.</small>
+            }
+          </label>
+          <div class="pair">
+            <label>Major *
+              <input formControlName="major" type="number" min="0" max="65535" step="1" class="mono" (input)="duplicate.set(false)" />
+              @if (form.controls.major.touched && form.controls.major.invalid) { <small class="field-error">Entero entre 0 y 65535.</small> }
+            </label>
+            <label>Minor *
+              <input formControlName="minor" type="number" min="0" max="65535" step="1" class="mono" (input)="duplicate.set(false)" />
+              @if (form.controls.minor.touched && form.controls.minor.invalid) { <small class="field-error">Entero entre 0 y 65535.</small> }
+            </label>
+          </div>
+          @if (duplicate()) {
+            <div class="alert" role="alert">
+              <strong>Identificador duplicado</strong>
+              <p>{{ formError() }}</p>
+            </div>
+          }
+        </fieldset>
+        <label>Potencia Tx calibrada (dBm) *
+          <input formControlName="txPowerDbm" type="number" min="-120" max="0" step="1" class="mono" />
+          @if (form.controls.txPowerDbm.valid && formRange(); as meters) {
+            <small>Alcance aproximado: {{ meters }} m</small>
+          }
+          @if (form.controls.txPowerDbm.touched && form.controls.txPowerDbm.invalid) {
+            <small class="field-error">Entero entre -120 y 0.</small>
+          }
+        </label>
+        <label>Piso *
+          <select formControlName="floorId" (change)="onFloorChange()">
+            <option value="" disabled>Selecciona un piso</option>
+            @for (floor of floors(); track floor.id) {
+              <option [value]="floor.id">{{ floor.name }}</option>
+            }
+          </select>
+          @if (form.controls.floorId.touched && form.controls.floorId.invalid) { <small class="field-error">Obligatorio.</small> }
+        </label>
+
+        <fieldset>
+          <legend>Ubicación en el plano</legend>
+          <div class="location">
+            <span class="muted">
+              @if (position(); as point) {
+                Posición: (X: {{ point.x }}, Y: {{ point.y }})
+              } @else {
+                Coordenadas: sin definir
+              }
+            </span>
+            <div class="actions">
+              <button type="button" class="outline" [disabled]="!form.controls.floorId.value" (click)="togglePicking()">
+                {{ picking() ? 'Ocultar plano' : 'Ubicar en el mapa' }}
+              </button>
+              @if (position()) {
+                <button type="button" class="outline" (click)="clearPosition()">Quitar posición</button>
+              }
+            </div>
+          </div>
+          @if (picking()) {
+            @if (formBounds(); as bounds) {
+              <div class="plan picker" role="button" tabindex="0"
+                aria-label="Plano del piso: haz clic para ubicar la baliza"
+                [style.aspect-ratio]="bounds.widthUnits + ' / ' + bounds.heightUnits"
+                (click)="placeOnPlan($event)">
+                @if (planImages()[form.controls.floorId.value]; as image) { <img class="plan-image" [src]="image" alt="" /> }
+                @if (position(); as point) {
+                  <span class="dot selected" [style.left.%]="(point.x / bounds.widthUnits) * 100" [style.top.%]="(point.y / bounds.heightUnits) * 100">●</span>
+                }
+              </div>
+              <div class="pair">
+                <label>X
+                  <input type="number" min="0" [max]="bounds.widthUnits" step="0.1" class="mono"
+                    [value]="position()?.x ?? ''" (change)="setCoordinate('x', $any($event.target).value)" />
+                </label>
+                <label>Y
+                  <input type="number" min="0" [max]="bounds.heightUnits" step="0.1" class="mono"
+                    [value]="position()?.y ?? ''" (change)="setCoordinate('y', $any($event.target).value)" />
+                </label>
+              </div>
+              <small class="muted">Plano de {{ bounds.widthUnits }} × {{ bounds.heightUnits }} unidades.</small>
+            } @else {
+              <p class="notice">Este piso aún no tiene un plano en borrador, por lo que no se puede ubicar la baliza.</p>
+            }
+          }
+          <div class="toggle">
+            <label class="switch-label">
+              <span>
+                <strong>Activa para la navegación</strong>
+                <small>Publicar puntos de referencia en las rutas activas</small>
+              </span>
+              <input type="checkbox" role="switch" formControlName="active" [attr.disabled]="canActivate() ? null : ''" />
+            </label>
+            @if (!canActivate()) {
+              <div class="alert" role="status">
+                <strong>Activación bloqueada</strong>
+                <p>Ubica esta baliza en el plano antes de activarla.</p>
+              </div>
+            }
+          </div>
+        </fieldset>
+
+        @if (formError() && !duplicate()) {
+          <p class="alert" role="alert">{{ formError() }}</p>
+        }
+        <footer class="actions drawer-actions">
+          <button type="button" [disabled]="saving()" (click)="closeDrawer()">Cancelar</button>
+          <button type="submit" class="primary" [disabled]="saving()">{{ saving() ? 'Guardando…' : current.beaconId ? 'Guardar' : 'Guardar baliza' }}</button>
+        </footer>
+      </form>
+    </aside>
+  }
+</app-admin-shell>

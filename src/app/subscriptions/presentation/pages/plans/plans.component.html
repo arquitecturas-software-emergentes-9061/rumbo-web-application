@@ -1,0 +1,44 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <a routerLink="/admin">Panel</a>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">Planes</span>
+    </nav>
+    <h1>Planes de suscripción</h1>
+    <p>Compara las características y los límites de cada plan.</p>
+  </header>
+
+  @if (loading() || subscriptionLoading()) {
+    <p role="status">Cargando planes…</p>
+  } @else if (loadFailed() || subscriptionFailed()) {
+    <p class="alert" role="alert">{{ error() || 'No se pudo cargar tu suscripción.' }}</p>
+    <button type="button" class="outline" (click)="reload()">Reintentar</button>
+  } @else if (plans().length === 0) {
+    <p>No hay planes disponibles por ahora.</p>
+  } @else {
+    <div class="plans-grid">
+      @for (plan of plans(); track plan.code) {
+        <section class="card" [attr.aria-labelledby]="'plan-' + plan.code">
+          <h2 [id]="'plan-' + plan.code">{{ plan.name }}</h2>
+          <p class="price">{{ plan.price.currency === 'PEN' ? 'S/' : plan.price.currency }} {{ plan.price.amount.toFixed(2) }}</p>
+          <p class="interval">{{ plan.billingInterval === 'MONTH' ? 'por mes' : plan.billingInterval }}</p>
+          <h3>LÍMITES DEL PLAN</h3>
+          <p>{{ quotaText(plan.quota) }}</p>
+          @if (plan.purchaseMode === 'CONTACT_SALES') {
+            <p class="contact-sales">Contactar a ventas</p>
+          } @else if (plan.purchaseMode === 'CHECKOUT') {
+            @if (current(plan) || blocked(plan)) {
+              <button type="button" class="outline" disabled [attr.aria-describedby]="blocked(plan) ? 'limit-' + plan.code : null">{{ action(plan) }}</button>
+              @if (blocked(plan)) {
+                <p [id]="'limit-' + plan.code">Tu consumo supera los límites de este plan</p>
+              }
+            } @else {
+              <a class="outline" routerLink="/subscriptions/checkout" [queryParams]="{ plan: plan.code }">{{ action(plan) }}</a>
+            }
+          }
+        </section>
+      }
+    </div>
+  }
+</app-admin-shell>

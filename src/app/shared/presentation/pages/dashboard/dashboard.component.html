@@ -1,0 +1,38 @@
+<app-admin-shell>
+  <header class="page-heading">
+    <h1>Panel</h1>
+    <p>Administración de clínicas y navegación interior</p>
+  </header>
+
+  <div class="overview">
+    <section class="overview-card" aria-labelledby="management-heading">
+      <h2 id="management-heading">Clínicas y sedes</h2>
+      <p>
+        Gestiona el perfil de tu clínica, actualiza las direcciones de sus sedes y registra los
+        pisos de cada sede.
+      </p>
+      <a class="primary-action" routerLink="/planning/sites">Ir a Clínicas y sedes</a>
+    </section>
+
+    <section class="overview-card" aria-labelledby="plans-heading">
+      <h2 id="plans-heading">Planes de suscripción</h2>
+      <p>Consulta los planes disponibles y sus precios mensuales en soles.</p>
+      <a class="primary-action" routerLink="/subscriptions/plans">Ir a Planes</a>
+      <a routerLink="/subscriptions/me">Mi suscripción</a>
+    </section>
+
+    <section class="overview-card" aria-labelledby="access-heading">
+      <h2 id="access-heading">Acceso administrativo</h2>
+      <dl>
+        <div>
+          <dt>Rol</dt>
+          <dd>Administrador de clínica</dd>
+        </div>
+        <div>
+          <dt>Sesión</dt>
+          <dd>Verificada</dd>
+        </div>
+      </dl>
+    </section>
+  </div>
+</app-admin-shell>

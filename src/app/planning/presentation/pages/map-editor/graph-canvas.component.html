@@ -1,0 +1,131 @@
+@if (plan(); as bounds) {
+  <div class="canvas-frame">
+  <svg class="canvas" [attr.viewBox]="viewBox()"
+    preserveAspectRatio="xMidYMid meet" role="application"
+    aria-label="Lienzo del mapa. Usa las flechas sobre un nodo enfocado para moverlo."
+    [class.tool-node]="tool() === 'node'" [class.tool-edge]="tool() === 'edge' || tool() === 'reconnect'"
+    (click)="canvasClicked($event)" (pointermove)="pointerMoved($event)">
+    <rect class="plan-area" [class.highlighted]="highlightedPlan()" x="0" y="0" [attr.width]="bounds.widthUnits" [attr.height]="bounds.heightUnits" />
+    @if (backdrop(); as context) {
+      <g class="backdrop" [class.interactive]="interactiveZones()" [attr.aria-hidden]="interactiveZones() ? null : 'true'">
+        @for (zone of context.zones; track zone.id) {
+          <path class="zone" [class.selected]="zone.id === selectedZoneId()" [attr.d]="zonePath(zone)" fill-rule="evenodd"
+            [attr.fill]="fill(zone.category)" [attr.stroke-width]="unit()"
+            [attr.role]="interactiveZones() ? 'button' : null" [attr.tabindex]="interactiveZones() ? 0 : null"
+            [attr.aria-label]="interactiveZones() ? 'Ambiente ' + zone.name : null"
+            (click)="pickZone($event, zone.id)" (keydown.enter)="pickZone($event, zone.id)" (keydown.space)="pickZone($event, zone.id)" />
+          <text [attr.x]="zone.labelPosition?.x ?? zone.x + zone.width / 2" [attr.y]="zone.labelPosition?.y ?? zone.y + zone.height / 2" [attr.font-size]="unit() * 6"
+            text-anchor="middle">{{ zone.name }}</text>
+        }
+        @if (showSourceGeometry() && context.barriers?.length) {
+          @for (barrier of context.barriers; track $index) {
+            <path class="barrier" [class.window]="barrier.kind === 'WINDOW'" [class.obstacle]="barrier.kind === 'OBSTACLE'"
+              [attr.d]="polygonPath(barrier.polygon)" fill-rule="evenodd" />
+          }
+        }
+        @if ((showSourceGeometry() && (interactiveZones() || !context.barriers?.length)) || highlightedWallCandidate() !== null) {
+          @for (wall of context.wallCandidates; track $index) {
+            @if (showSourceGeometry() || $index === highlightedWallCandidate()) {
+              <line [class.selected]="$index === highlightedWallCandidate()" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 2" />
+            }
+          }
+        }
+        @for (door of context.doors ?? []; track door.id) {
+          @if (showSourceGeometry() || $index === highlightedDoorCandidate() || !isAdoptedDoor(door)) {
+            <line class="door" [class.review]="!showSourceGeometry() && !isAdoptedDoor(door)"
+              [class.selected]="$index === highlightedDoorCandidate()"
+              [attr.x1]="door.x1" [attr.y1]="door.y1" [attr.x2]="door.x2" [attr.y2]="door.y2" [attr.stroke-width]="unit() * 3" />
+          }
+        }
+      </g>
+    }
+    <g class="editable-geometry">
+      @for (wall of walls(); track wall.id) {
+        <line class="editable-wall" [class.selected]="isSelected('wall', wall.id)"
+          [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
+          [attr.stroke-width]="unit() * 2" />
+        <line class="geometry-hit" [attr.x1]="wall.x1" [attr.y1]="wall.y1"
+          [attr.x2]="wall.x2" [attr.y2]="wall.y2" [attr.stroke-width]="unit() * 12"
+          role="button" tabindex="0" aria-label="Muro"
+          (pointerdown)="geometryDown($event, 'wall', wall.id)" (pointerup)="geometryUp($event)"
+          (click)="wallClicked($event, wall)" (keydown.enter)="wallPicked.emit({ id: wall.id, fraction: 0.5 })" />
+      }
+      @for (entry of doorLines(); track entry.door.id) {
+          <line class="editable-door" [class.selected]="isSelected('door', entry.door.id)"
+            [attr.x1]="entry.segment.x1" [attr.y1]="entry.segment.y1"
+            [attr.x2]="entry.segment.x2" [attr.y2]="entry.segment.y2"
+            [attr.stroke-width]="unit() * 5" />
+      }
+    </g>
+    @for (line of lines(); track line.connection.id) {
+      <line class="edge" [class.selected]="isSelected('connection', line.connection.id)"
+        [class.one-way]="!line.connection.bidirectional"
+        [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+        [attr.stroke-width]="unit() * 2" />
+      <line class="edge-hit" [attr.x1]="line.x1" [attr.y1]="line.y1" [attr.x2]="line.x2" [attr.y2]="line.y2"
+        [attr.stroke-width]="unit() * 10" role="button" tabindex="0"
+        [attr.aria-label]="'Conexión ' + line.connection.type"
+        (click)="lineClicked($event, line.connection.id)" (keydown.enter)="connectionPicked.emit(line.connection.id)"
+        (keydown.space)="connectionPicked.emit(line.connection.id)" />
+    }
+    @for (node of positioned(); track node.id) {
+      <g class="node" [class.selected]="isSelected('node', node.id)" [class.pending]="pendingFrom() === node.id"
+        role="button" tabindex="0" [attr.aria-label]="'Nodo ' + node.type + (label(node) ? ': ' + label(node) : '')"
+        (pointerdown)="nodeDown($event, node)" (pointerup)="pointerUp($event, node)"
+        (click)="nodeClicked($event, node)" (keydown)="nodeKey($event, node)">
+        @if (verticalAt(node.id).length) {
+          <title>{{ verticalAt(node.id).length }} conexión(es) entre pisos. Selecciona el nodo para consultar.</title>
+          <circle class="vertical-marker" [class.accessible]="verticalAt(node.id)[0].connection.accessibility === 'ACCESSIBLE'"
+            [class.inaccessible]="verticalAt(node.id)[0].connection.accessibility === 'INACCESSIBLE'"
+            [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="unit() * 10" [attr.stroke-width]="unit() * 2" />
+        }
+        @if (interactiveZones() && node.type === 'INTERSECTION') {
+          <circle [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="unit() * 6" fill="transparent" />
+        }
+        <circle [attr.cx]="node.x" [attr.cy]="node.y"
+          [attr.r]="unit() * (interactiveZones() && node.type === 'INTERSECTION' && !isSelected('node', node.id) ? 4 : 6)"
+          [attr.fill]="color(node)"
+          [attr.stroke-width]="unit() * 2" />
+        @if (label(node); as text) {
+          @if (showsDestinationLabel(node, text)) {
+          <text [attr.x]="node.x" [attr.y]="node.y - unit() * 10" [attr.font-size]="unit() * 8" text-anchor="middle">{{ text }}</text>
+          }
+        }
+      </g>
+    }
+    <g class="door-selection">
+      @for (entry of doorLines(); track entry.door.id) {
+        <line class="geometry-hit" [attr.x1]="entry.segment.x1" [attr.y1]="entry.segment.y1"
+          [attr.x2]="entry.segment.x2" [attr.y2]="entry.segment.y2" [attr.stroke-width]="unit() * 14"
+          role="button" tabindex="0" aria-label="Puerta"
+          (pointerdown)="geometryDown($event, 'door', entry.door.id)" (pointerup)="geometryUp($event)"
+          (click)="$event.stopPropagation(); doorPicked.emit(entry.door.id)"
+          (keydown.enter)="doorPicked.emit(entry.door.id)" />
+      }
+      @if (interactiveZones() && backdrop(); as context) {
+        @for (candidate of context.doors ?? []; track candidate.id) {
+          @if (!isAdoptedDoor(candidate)) {
+            <line class="geometry-hit candidate-hit" [attr.x1]="candidate.x1" [attr.y1]="candidate.y1"
+              [attr.x2]="candidate.x2" [attr.y2]="candidate.y2" [attr.stroke-width]="unit() * 14"
+              role="button" tabindex="0" [attr.aria-label]="'Puerta candidata ' + ($index + 1)"
+              (click)="$event.stopPropagation(); doorCandidatePicked.emit($index)"
+              (keydown.enter)="doorCandidatePicked.emit($index)" />
+          }
+        }
+      }
+    </g>
+    @if (highlightedPoint(); as point) {
+      <circle class="alert-target" [attr.cx]="point.x" [attr.cy]="point.y"
+        [attr.r]="unit() * 13" [attr.stroke-width]="unit() * 2" />
+    }
+  </svg>
+  <div class="zoom-controls" role="toolbar" aria-label="Zoom del mapa">
+    <button type="button" aria-label="Acercar" [disabled]="zoom() >= 4" (click)="zoomIn()">+</button>
+    <button type="button" aria-label="Alejar" [disabled]="zoom() <= 1" (click)="zoomOut()">−</button>
+    <button type="button" aria-label="Ajustar al plano" (click)="fit()">⌗</button>
+  </div>
+  <span class="zoom-status">{{ zoom() * 100 }}%</span>
+  </div>
+} @else {
+  <p class="empty">Este piso no tiene un plano en el borrador. Carga y calibra un plano en Mapas.</p>
+}

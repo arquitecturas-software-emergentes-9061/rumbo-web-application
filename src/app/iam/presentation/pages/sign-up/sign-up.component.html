@@ -1,0 +1,183 @@
+<app-auth-layout>
+  <header class="auth-heading">
+    <h1>Registrar clínica</h1>
+    <p>Completa los datos para empezar.</p>
+  </header>
+
+  @if (errorMessage()) {
+    <div class="alert alert-error" role="alert">
+      <svg aria-hidden="true" class="alert-icon" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
+        <path
+          fill-rule="evenodd"
+          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+          clip-rule="evenodd"
+        />
+      </svg>
+      <div>{{ errorMessage() }}</div>
+    </div>
+  }
+
+  <form [formGroup]="signUpForm" (ngSubmit)="onSubmit()" class="login-form" novalidate>
+    <div class="form-group">
+      <label for="fullName" class="form-label">Nombre completo *</label>
+      <div class="input-wrapper">
+        <input
+          id="fullName"
+          type="text"
+          formControlName="fullName"
+          class="form-control"
+          [class.is-invalid]="fullNameControl?.invalid && fullNameControl?.touched"
+          placeholder="ej. María López"
+          autocomplete="name"
+          required
+          [attr.aria-invalid]="fullNameControl?.invalid && fullNameControl?.touched"
+        />
+      </div>
+      @if (fullNameControl?.invalid && fullNameControl?.touched) {
+        <div class="field-error" id="fullName-error">
+          <span>El nombre completo es obligatorio.</span>
+        </div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="email" class="form-label">Correo corporativo *</label>
+      <div class="input-wrapper">
+        <input
+          id="email"
+          type="email"
+          formControlName="email"
+          class="form-control"
+          [class.is-invalid]="(emailControl?.invalid && emailControl?.touched) || emailTaken()"
+          placeholder="maria.lopez@clinicaejemplo.pe"
+          autocomplete="email"
+          required
+          (input)="emailTaken.set(false)"
+          [attr.aria-invalid]="(emailControl?.invalid && emailControl?.touched) || emailTaken()"
+        />
+      </div>
+      @if (emailTaken()) {
+        <div class="field-error" id="email-taken">
+          <span>Ya existe una cuenta con este correo. <a routerLink="/login">Iniciar sesión</a></span>
+        </div>
+      } @else if (emailControl?.invalid && emailControl?.touched) {
+        <div class="field-error" id="email-error">
+          @if (emailControl?.errors?.['required']) {
+            <span>El correo corporativo es obligatorio.</span>
+          } @else {
+            <span>Ingrese un formato de correo válido.</span>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="password" class="form-label">Contraseña *</label>
+      <div class="input-wrapper password-wrapper">
+        <input
+          id="password"
+          [type]="showPassword() ? 'text' : 'password'"
+          formControlName="password"
+          class="form-control"
+          [class.is-invalid]="passwordControl?.invalid && passwordControl?.touched"
+          placeholder="••••••••"
+          autocomplete="new-password"
+          required
+          [attr.aria-invalid]="passwordControl?.invalid && passwordControl?.touched"
+        />
+        <button
+          type="button"
+          class="toggle-password-btn"
+          (click)="togglePasswordVisibility()"
+          [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Ver contraseña'"
+        >
+          @if (showPassword()) {
+            <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+              <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+              <path
+                fill-rule="evenodd"
+                d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          } @else {
+            <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" width="18" height="18">
+              <path
+                fill-rule="evenodd"
+                d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z"
+                clip-rule="evenodd"
+              />
+              <path
+                d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.741L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.065 7 9.542 7 .847 0 1.669-.105 2.454-.303z"
+              />
+            </svg>
+          }
+        </button>
+      </div>
+      <div class="policy-checklist">
+        <span class="checklist-title">Requisitos de seguridad:</span>
+        <div class="checklist-item" [class.valid]="hasMinLength">
+          <span class="check-icon" aria-hidden="true">{{ hasMinLength ? '✓' : '•' }}</span>
+          <span>Mínimo 8 caracteres (máx. 72)</span>
+        </div>
+        <div class="checklist-item" [class.valid]="hasUppercase">
+          <span class="check-icon" aria-hidden="true">{{ hasUppercase ? '✓' : '•' }}</span>
+          <span>Al menos 1 letra mayúscula</span>
+        </div>
+        <div class="checklist-item" [class.valid]="hasNumber">
+          <span class="check-icon" aria-hidden="true">{{ hasNumber ? '✓' : '•' }}</span>
+          <span>Al menos 1 número</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="clinicName" class="form-label">Nombre de la clínica *</label>
+      <div class="input-wrapper">
+        <input
+          id="clinicName"
+          type="text"
+          formControlName="clinicName"
+          class="form-control"
+          [class.is-invalid]="clinicNameControl?.invalid && clinicNameControl?.touched"
+          placeholder="ej. Clínica Ejemplo"
+          autocomplete="organization"
+          required
+          [attr.aria-invalid]="clinicNameControl?.invalid && clinicNameControl?.touched"
+        />
+      </div>
+      @if (clinicNameControl?.invalid && clinicNameControl?.touched) {
+        <div class="field-error" id="clinicName-error">
+          <span>El nombre de la clínica es obligatorio.</span>
+        </div>
+      }
+    </div>
+
+    <div class="form-group">
+      <label class="checkbox-row" for="acceptedTerms">
+        <input id="acceptedTerms" type="checkbox" formControlName="acceptedTerms" />
+        <span>Acepto los Términos de Servicio y la Política de Privacidad *</span>
+      </label>
+      @if (termsControl?.invalid && termsControl?.touched) {
+        <div class="field-error" id="terms-error">
+          <span>Debes aceptar los términos para crear la cuenta.</span>
+        </div>
+      }
+    </div>
+
+    <button type="submit" class="submit-button" [disabled]="isLoading() || signUpForm.invalid">
+      @if (isLoading()) {
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Creando cuenta...</span>
+      } @else {
+        <span>Crear cuenta</span>
+      }
+    </button>
+  </form>
+
+  <div class="card-footer">
+    <p class="auth-switch">
+      ¿Ya tienes una cuenta? <a routerLink="/login">Iniciar sesión</a>
+    </p>
+  </div>
+</app-auth-layout>
