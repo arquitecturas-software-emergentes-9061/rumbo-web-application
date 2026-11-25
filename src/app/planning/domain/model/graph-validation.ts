@@ -2,7 +2,7 @@ import { EditorGraph, PlanBounds } from './map-graph.types';
 import { wallTraversalIssue } from './wall-traversal';
 
 export type AlertSeverity = 'error' | 'warning';
-export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION' | 'WALL' | 'DOOR';
+export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION' | 'WALL' | 'DOOR' | 'BEACON';
 
 export interface GraphAlert {
   code: string;
@@ -37,6 +37,7 @@ const MESSAGES: Record<string, string> = {
   INVALID_NODE_DATA: 'Revisa la posición y el tipo del nodo.',
   INVALID_WALL_DATA: 'El muro debe pertenecer al plano y tener un segmento válido.',
   INVALID_DOOR_DATA: 'La puerta debe estar asociada a un muro y no superponerse con otra.',
+  INVALID_BEACON_PLACEMENT: 'Una baliza activa está fuera de los pisos o límites del mapa. Revisa su ubicación en Balizas.',
   CONNECTION_CROSSES_WALL: 'La conexión atraviesa o se superpone a un muro. Revisa el recorrido y sus puertas.',
   DOORWAY_WITHOUT_OPENING: 'La conexión está configurada como «Puerta», pero no coincide con una abertura de un muro.',
   MISSING_SOURCE_NODE: 'La conexión apunta a un nodo de origen que no existe.',

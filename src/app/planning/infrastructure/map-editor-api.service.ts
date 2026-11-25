@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { catchError, map, of, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { GraphConnection, GraphNode, Destination, EditorGraph, PlanBounds, MapWall, MapDoor } from '../domain/model/map-graph.types';
-import { DraftSnapshot } from '../application/map-editor.contracts';
+import { DraftSnapshot, PublishedMapVersion } from '../application/map-editor.contracts';
 import { MapEditorPort } from '../application/planning.ports';
 export type { DraftSnapshot } from '../application/map-editor.contracts';
 
@@ -50,6 +50,18 @@ export class MapEditorApiService implements MapEditorPort {
 
   private mapsUrl(siteId: string) {
     return `${environment.apiUrl}/sites/${encodeURIComponent(siteId)}/maps`;
+  }
+
+  publish(snapshot: DraftSnapshot) {
+    const url = `${this.mapsUrl(snapshot.siteId)}/${encodeURIComponent(snapshot.mapId)}/versions/${encodeURIComponent(snapshot.modelVersionId)}`;
+    return this.http.patch<PublishedMapVersion>(url, { status: 'PUBLISHED' }, {
+      headers: { 'Content-Type': 'application/merge-patch+json', 'If-Match': snapshot.etag }
+    }).pipe(map(version => {
+      if (version.status !== 'PUBLISHED' || version.modelVersionId !== snapshot.modelVersionId
+          || version.siteId !== snapshot.siteId || version.mapId !== snapshot.mapId)
+        throw new Error('Incomplete publication response');
+      return version;
+    }));
   }
 
   private snapshot(response: HttpResponse<DraftResponse>): DraftSnapshot {

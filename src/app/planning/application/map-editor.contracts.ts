@@ -10,6 +10,13 @@ export interface DraftSnapshot {
   graph: EditorGraph;
 }
 
+export interface PublishedMapVersion {
+  siteId: string;
+  mapId: string;
+  modelVersionId: string;
+  status: 'PUBLISHED';
+}
+
 export type SaveFailureKind = 'stale' | 'not-draft' | 'invalid' | 'offline' | 'forbidden' | 'missing' | 'other';
 
 export interface SaveFailure {

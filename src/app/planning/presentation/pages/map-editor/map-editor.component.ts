@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, HostListener, OnInit, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { MapPublicationPanelComponent } from '../../components/map-publication-panel/map-publication-panel.component';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -43,7 +44,7 @@ const EMPTY_PROPOSAL: ModelProposal = { zones: [], nodes: [], connections: [], w
 
 @Component({
   selector: 'app-map-editor',
-  imports: [AdminShellComponent, MapSectionNavigationComponent, ReactiveFormsModule, RouterLink, GraphCanvasComponent],
+  imports: [AdminShellComponent, MapSectionNavigationComponent, MapPublicationPanelComponent, ReactiveFormsModule, RouterLink, GraphCanvasComponent],
   templateUrl: './map-editor.component.html',
   styleUrl: './map-editor.component.css',
   host: { class: 'map-editor-page' }
@@ -111,6 +112,11 @@ export class MapEditorComponent implements OnInit {
   readonly draftLoading = signal(false);
   readonly creatingDraft = signal(false);
   readonly saving = signal(false);
+  readonly publishing = signal(false);
+  readonly publicationReview = signal(false);
+  readonly publicationFailure = signal<string | null>(null);
+  readonly publishedVersion = signal<string | null>(null);
+  readonly publicationNeedsReload = signal(false);
   readonly saveFailure = signal<SaveFailure | null>(null);
   readonly serverAlerts = signal<GraphAlert[]>([]);
   /** Rooms and walls of the last model applied to the draft, kept as read-only context. */
@@ -311,9 +317,15 @@ export class MapEditorComponent implements OnInit {
       ...this.serverAlerts().filter(alert => !seen.has(`${alert.code}|${alert.elementId}`))];
   });
   readonly graphErrorCount = computed(() => countErrors(this.graphAlerts()));
+  readonly unconfirmedScale = computed(() => this.editor.plans().some(plan => plan.metersPerUnit === null || plan.metersPerUnit <= 0));
   readonly reachability = computed(() => destinationReachability(this.editor.graph()));
   readonly canSave = computed(() => !!this.draft() && !this.proposal() && this.editor.dirty()
-    && !this.editor.geometryError() && !this.saving());
+    && !this.editor.geometryError() && !this.saving() && !this.publishing() && !this.publishedVersion());
+  readonly canPublish = computed(() => !!this.draft() && !this.proposal() && !this.editor.dirty()
+    && !this.saving() && !this.publishing() && !this.draftLoading() && !this.publishedVersion()
+    && !this.publicationNeedsReload()
+    && this.graphErrorCount() === 0 && this.editor.plans().length > 0
+    && this.editor.plans().every(plan => plan.metersPerUnit !== null && plan.metersPerUnit > 0));
   /** A site without any map can start its first draft from the plan selected for the current floor. */
   readonly canCreateDraft = computed(() => !this.draft() && !this.draftLoading() && !this.creatingDraft()
     && !!this.siteId() && !!this.floorId() && !!this.versionId());
@@ -415,11 +427,16 @@ export class MapEditorComponent implements OnInit {
   }
 
   selectSite(id: string | null, force = false): void {
+    if (this.publishing()) return;
     if (!force && id !== this.siteId() && !this.confirmDiscard()) return;
     const preferredFloorId = this.floorId() ?? this.initialFloorId;
     this.initialFloorId = null;
     this.clearAlertHighlight();
     this.siteId.set(id);
+    this.publicationReview.set(false);
+    this.publicationFailure.set(null);
+    this.publishedVersion.set(null);
+    this.publicationNeedsReload.set(false);
     this.floors.set([]);
     this.floorId.set(null);
     this.floorSelection.next(null);
@@ -447,6 +464,7 @@ export class MapEditorComponent implements OnInit {
   }
 
   selectFloor(id: string | null): void {
+    if (this.publishing()) return;
     this.clearAlertHighlight();
     this.floorId.set(id);
     this.editor.floorId.set(id);
@@ -458,6 +476,7 @@ export class MapEditorComponent implements OnInit {
   }
 
   selectVersion(id: string): void {
+    if (this.publishing()) return;
     this.versionId.set(id);
     this.resetPreview();
   }
@@ -469,6 +488,9 @@ export class MapEditorComponent implements OnInit {
     this.draftApi.load(siteId).pipe(takeUntilDestroyed(this.destroyRef), finalize(() => this.draftLoading.set(false))).subscribe({
       next: snapshot => {
         this.draft.set(snapshot);
+        this.publicationNeedsReload.set(false);
+        this.publicationReview.set(false);
+        this.publicationFailure.set(null);
         this.editor.load(snapshot?.graph ?? { nodes: [], connections: [], destinations: [] }, snapshot?.plans ?? []);
         if (this.floorId()) this.editor.floorId.set(this.floorId());
         this.restoreBackdrop();
@@ -917,7 +939,8 @@ export class MapEditorComponent implements OnInit {
     const headings: Record<string, string> = {
       DISCONNECTED_NODE: 'Nodo aislado', UNREACHABLE_DESTINATION: 'Destino sin acceso',
       DUPLICATE_CONNECTION: 'Arista duplicada', INVALID_CONNECTION_DATA: 'Datos de arista inválidos',
-      MISSING_ACCESS: 'Falta un acceso', MISSING_DESTINATION: 'Falta un destino'
+      MISSING_ACCESS: 'Falta un acceso', MISSING_DESTINATION: 'Falta un destino',
+      INVALID_BEACON_PLACEMENT: 'Baliza fuera del mapa'
     };
     return headings[alert.code] ?? (alert.severity === 'error' ? 'Error del modelo' : 'Advertencia del modelo');
   }
@@ -927,6 +950,7 @@ export class MapEditorComponent implements OnInit {
   }
 
   alertLocation(alert: GraphAlert): string | null {
+    if (alert.elementType === 'BEACON') return alert.elementId ? `Baliza: ${alert.elementId}` : null;
     if (alert.candidateIndex !== undefined && (alert.elementType === 'WALL' || alert.elementType === 'DOOR'))
       return `${alert.elementType === 'WALL' ? 'Muro' : 'Puerta'} candidata ${alert.candidateIndex + 1}`;
     if (!alert.elementId) return null;
@@ -1123,6 +1147,7 @@ export class MapEditorComponent implements OnInit {
   save(): void {
     const snapshot = this.draft();
     if (!snapshot || !this.canSave()) return;
+    this.publicationReview.set(false);
     this.saving.set(true);
     this.saveFailure.set(null);
     this.success.set(null);
@@ -1143,6 +1168,44 @@ export class MapEditorComponent implements OnInit {
         this.saveFailure.set(failure);
         this.serverAlerts.set(failure.issues);
         if (failure.kind === 'invalid') this.tab.set('alerts');
+      }
+    });
+  }
+
+  reviewPublication(): void {
+    if (!this.canPublish()) return;
+    this.publicationFailure.set(null);
+    this.serverAlerts.set([]);
+    this.publicationReview.set(true);
+  }
+
+  publish(): void {
+    const snapshot = this.draft();
+    if (!snapshot || !this.publicationReview() || !this.canPublish()) return;
+    this.publishing.set(true);
+    this.publicationFailure.set(null);
+    this.draftApi.publish(snapshot).pipe(takeUntilDestroyed(this.destroyRef),
+      finalize(() => this.publishing.set(false))).subscribe({
+      next: version => {
+        this.publishedVersion.set(version.modelVersionId);
+        this.publicationReview.set(false);
+        this.serverAlerts.set([]);
+        this.success.set('Mapa publicado. Esta versión es la oficial de la sede.');
+      },
+      error: (error: HttpErrorResponse) => {
+        const failure = classifySaveError(error);
+        this.publicationFailure.set(error.status === 412
+          ? 'El borrador cambió desde que lo revisaste. Recarga y revisa la versión nueva antes de publicar.'
+          : error.status === 0 ? 'No se pudo confirmar la publicación. Recarga el borrador para comprobar su estado antes de reintentar.'
+          : failure.kind === 'forbidden' ? 'Tu cuenta no tiene permiso para publicar este mapa.'
+          : failure.kind === 'other' ? 'No se pudo publicar el mapa. Recarga el borrador antes de volver a intentarlo.'
+          : failure.message);
+        this.serverAlerts.set(failure.issues);
+        if (failure.kind === 'invalid') this.tab.set('alerts');
+        if ([0, 409, 412, 404].includes(error.status)) {
+          this.publicationReview.set(false);
+          this.publicationNeedsReload.set(true);
+        }
       }
     });
   }
