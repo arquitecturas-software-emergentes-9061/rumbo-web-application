@@ -35,6 +35,14 @@
       </label>
     </div>
 
+    @if (publishedVersion(); as published) {
+      <section class="card" role="status">
+        <h2>Mapa publicado</h2>
+        <p>La sede ya utiliza esta versión oficial. El borrador publicado queda protegido frente a nuevas ediciones.</p>
+        <a routerLink="/planning/maps" [queryParams]="{ siteId: siteId(), floorId: floorId() }" class="outline link-button">Volver a los planos</a>
+      </section>
+    } @else {
+    <div [inert]="publishing()">
     <div class="toolbar" role="toolbar" aria-label="Acciones del modelo">
       <button type="button" class="primary generate" [disabled]="!canGenerate()" (click)="generate()">
         {{ generating() ? 'Generando…' : '✧ Generar modelo' }}
@@ -51,6 +59,38 @@
         {{ saving() ? 'Guardando…' : 'Guardar borrador' }}
       </button>
     </div>
+
+    <app-map-publication-panel>
+      @if (draft(); as snapshot) {
+        <p>Publica el borrador guardado como versión oficial de {{ site()?.name }}. La API comprobará el mapa y las balizas activas antes de reemplazar la versión anterior.</p>
+        @if (editor.dirty()) {
+          <p class="hint">Guarda los cambios del borrador antes de publicarlo.</p>
+        }
+        @if (graphErrorCount() > 0 || unconfirmedScale()) {
+          <p class="hint">Resuelve las observaciones del modelo y confirma la escala de todos los pisos.</p>
+        }
+        @if (!publicationReview()) {
+          <button type="button" class="outline" [disabled]="!canPublish()" (click)="reviewPublication()">Revisar publicación</button>
+        } @else {
+          <p>Se publicará un mapa con {{ editor.plans().length }} {{ editor.plans().length === 1 ? 'piso' : 'pisos' }},
+            {{ editor.graph().nodes.length }} {{ editor.graph().nodes.length === 1 ? 'nodo' : 'nodos' }} y
+            {{ editor.graph().destinations.length }} {{ editor.graph().destinations.length === 1 ? 'destino' : 'destinos' }}.
+            La versión oficial anterior, si existe, se archivará.</p>
+          <p class="hint">Si otra persona modifica el borrador durante esta revisión, tendrás que recargarlo antes de publicar.</p>
+          <div class="selectors">
+            <button type="button" class="primary" [disabled]="!canPublish()" (click)="publish()">Confirmar publicación</button>
+            <button type="button" class="outline" (click)="publicationReview.set(false)">Seguir editando</button>
+          </div>
+        }
+        @if (publicationFailure(); as failure) {
+          <p class="alert" role="alert">{{ failure }}</p>
+          <button type="button" class="outline" (click)="reloadDraft()">Recargar borrador</button>
+          <a routerLink="/planning/beacons" class="outline link-button">Revisar balizas</a>
+        }
+      } @else {
+        <p>Guarda un borrador de la sede para poder validarlo y publicarlo.</p>
+      }
+    </app-map-publication-panel>
 
     @if (!proposal() && reachability().total > 0 && reachability().percent < 100) {
       <div class="model-warning" role="status">
@@ -469,5 +509,8 @@
         }
       </aside>
     </div>
+    </div>
+    @if (publishing()) { <p role="status" aria-live="polite">Validando y publicando la versión guardada…</p> }
+    }
   }
 </app-admin-shell>

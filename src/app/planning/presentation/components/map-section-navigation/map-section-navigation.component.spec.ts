@@ -18,7 +18,8 @@ describe('MapSectionNavigationComponent', () => {
     expect(host.querySelector('.location-path')?.textContent).toContain('Sede Central');
     expect(host.querySelector('.location-path')?.textContent).toContain('Piso 2');
     expect(host.querySelector('.map-workflow-tabs [aria-current="page"]')?.textContent).toBe('Conexiones entre pisos');
-    expect(host.querySelectorAll('.map-workflow-tabs a')).toHaveLength(3);
+    expect(host.querySelectorAll('.map-workflow-tabs a')).toHaveLength(4);
+    expect(host.querySelector('a[href*="#publication"]')?.textContent).toContain('Validar y publicar');
     expect(host.querySelector('a[href*="/planning/map-editor"]')?.getAttribute('href')).toContain('floorId=floor-2');
   });
 

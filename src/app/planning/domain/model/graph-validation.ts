@@ -1,7 +1,8 @@
 import { EditorGraph, PlanBounds } from './map-graph.types';
+import { wallTraversalIssue } from './wall-traversal';
 
 export type AlertSeverity = 'error' | 'warning';
-export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION' | 'WALL' | 'DOOR';
+export type AlertElement = 'GRAPH' | 'PLAN' | 'NODE' | 'CONNECTION' | 'DESTINATION' | 'WALL' | 'DOOR' | 'BEACON';
 
 export interface GraphAlert {
   code: string;
@@ -36,7 +37,8 @@ const MESSAGES: Record<string, string> = {
   INVALID_NODE_DATA: 'Revisa la posición y el tipo del nodo.',
   INVALID_WALL_DATA: 'El muro debe pertenecer al plano y tener un segmento válido.',
   INVALID_DOOR_DATA: 'La puerta debe estar asociada a un muro y no superponerse con otra.',
-  CONNECTION_CROSSES_WALL: 'La conexión atraviesa un muro fuera de una puerta. Revisa el recorrido o agrega una puerta en el cruce.',
+  INVALID_BEACON_PLACEMENT: 'Una baliza activa está fuera de los pisos o límites del mapa. Revisa su ubicación en Balizas.',
+  CONNECTION_CROSSES_WALL: 'La conexión atraviesa o se superpone a un muro. Revisa el recorrido y sus puertas.',
   DOORWAY_WITHOUT_OPENING: 'La conexión está configurada como «Puerta», pero no coincide con una abertura de un muro.',
   MISSING_SOURCE_NODE: 'La conexión apunta a un nodo de origen que no existe.',
   MISSING_TARGET_NODE: 'La conexión apunta a un nodo de destino que no existe.'
@@ -92,6 +94,8 @@ export function validateGraph(graph: EditorGraph, plans: PlanBounds[]): GraphAle
     if (!(link.distanceMeters > 0) || !(link.weight > 0)) add('INVALID_CONNECTION_DATA', 'error', 'CONNECTION', link.id);
     const crosses = source.floorId !== target.floorId;
     if (crosses && !['STAIRS', 'RAMP', 'ELEVATOR'].includes(link.type)) add('INVALID_VERTICAL_CONNECTION', 'error', 'CONNECTION', link.id);
+    const wallIssue = wallTraversalIssue(graph, link, source, target);
+    if (wallIssue) add(wallIssue, 'error', 'CONNECTION', link.id);
   }
 
   for (const entry of graph.destinations) {
@@ -123,7 +127,7 @@ export function validateFloorProposal(graph: EditorGraph, plan: PlanBounds): Gra
     (scope.has(link.sourceNodeId) && (scope.has(link.targetNodeId) || !known.has(link.targetNodeId)))
     || (scope.has(link.targetNodeId) && !known.has(link.sourceNodeId)));
   const destinations = graph.destinations.filter(entry => scope.has(entry.nodeId));
-  return validateGraph({ nodes, connections, destinations }, [plan]);
+  return validateGraph({ nodes, connections, destinations, walls: graph.walls, doors: graph.doors }, [plan]);
 }
 
 export function fromServerIssues(issues: ServerIssue[] | undefined): GraphAlert[] {

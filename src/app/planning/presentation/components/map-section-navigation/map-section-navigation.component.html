@@ -23,5 +23,5 @@
     [class.active]="active() === 'editor'" [attr.aria-current]="active() === 'editor' ? 'page' : null">Editor de mapa</a>
   <a routerLink="/planning/interfloor-connections" [queryParams]="location()"
     [class.active]="active() === 'connections'" [attr.aria-current]="active() === 'connections' ? 'page' : null">Conexiones entre pisos</a>
-  <span class="future-step" title="Disponible al validar el modelo">Validar y publicar</span>
+  <a routerLink="/planning/map-editor" [queryParams]="location()" fragment="publication">Validar y publicar</a>
 </nav>

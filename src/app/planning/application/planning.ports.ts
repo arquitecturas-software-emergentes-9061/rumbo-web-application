@@ -5,7 +5,7 @@ import { ClinicOrganization, ClinicProfile, CreateFloorRequest, CreateSiteReques
 import { EditorGraph, GraphConnection } from '../domain/model/map-graph.types';
 import { Calibration, CalibrationInput, PlanInterpretation, PlanVersion } from './floor-plan.contracts';
 import { DraftSnapshot as InterfloorSnapshot } from './draft-graph.contracts';
-import { DraftSnapshot as EditorSnapshot } from './map-editor.contracts';
+import { DraftSnapshot as EditorSnapshot, PublishedMapVersion } from './map-editor.contracts';
 
 /** Application-facing operations. HTTP details and endpoint paths belong to infrastructure. */
 export interface SitesPort {
@@ -52,5 +52,6 @@ export interface MapEditorPort {
   load(siteId: string): Observable<EditorSnapshot | null>;
   createFirstDraft(siteId: string, plans: { floorId: string; planVersionId: string }[]): Observable<EditorSnapshot>;
   save(snapshot: EditorSnapshot, graph: EditorGraph): Observable<EditorSnapshot>;
+  publish(snapshot: EditorSnapshot): Observable<PublishedMapVersion>;
 }
 export const MAP_EDITOR_PORT = new InjectionToken<MapEditorPort>('Planning map editor');

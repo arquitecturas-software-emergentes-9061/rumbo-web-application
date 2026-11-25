@@ -34,7 +34,7 @@ describe('MapEditorComponent', () => {
   });
   const sites = { loadSites: () => of([site]), loadFloors: vi.fn() };
   const plans = { list: vi.fn(), interpret: vi.fn() };
-  const drafts = { load: vi.fn(), save: vi.fn(), createFirstDraft: vi.fn() };
+  const drafts = { load: vi.fn(), save: vi.fn(), createFirstDraft: vi.fn(), publish: vi.fn() };
   const draft = (scale: number | null = 0.5, graph: DraftSnapshot['graph'] = { nodes: [], connections: [], destinations: [] }): DraftSnapshot => ({
     siteId: 'site', mapId: 'm', modelVersionId: 'v', etag: '"rev-1"', graph,
     plans: [{ floorId: 'floor', planVersionId: 'pv', widthUnits: 100, heightUnits: 60, metersPerUnit: scale }]
@@ -108,6 +108,70 @@ describe('MapEditorComponent', () => {
       providers: [provideRouter([]), { provide: SITES_PORT, useValue: sites },
         { provide: FLOOR_PLANS_PORT, useValue: plans }, { provide: MAP_EDITOR_PORT, useValue: drafts }, { provide: AUTH_PORT, useValue: {} }]
     });
+  });
+
+  function savedPublishableDraft(): DraftSnapshot {
+    return draft(0.5, {
+      nodes: [{ id: 'a', floorId: 'floor', planVersionId: 'pv', x: 1, y: 1, type: 'ACCESS' },
+        { id: 'b', floorId: 'floor', planVersionId: 'pv', x: 5, y: 1, type: 'DESTINATION' }],
+      connections: [{ id: 'ab', sourceNodeId: 'a', targetNodeId: 'b', type: 'CORRIDOR',
+        distanceMeters: 2, weight: 2, verticalPenalty: 0, accessibility: 'ACCESSIBLE', bidirectional: true }],
+      destinations: [{ id: 'destination', nodeId: 'b', name: 'Recepción', type: 'SERVICE', specialty: null }],
+      walls: [], doors: []
+    });
+  }
+
+  it('requires a saved calibrated draft and explicit review before publishing', () => {
+    drafts.load.mockReturnValue(of(savedPublishableDraft()));
+    create([svg]);
+    expect(component.canPublish()).toBe(true);
+    component.publish();
+    expect(drafts.publish).not.toHaveBeenCalled();
+    component.editor.moveTo('a', 2, 1);
+    expect(component.canPublish()).toBe(false);
+    component.editor.load(savedPublishableDraft().graph, [{ ...savedPublishableDraft().plans[0], metersPerUnit: null }]);
+    expect(component.canPublish()).toBe(false);
+  });
+
+  it('publishes after confirmation and removes the editable workspace', () => {
+    const snapshot = savedPublishableDraft();
+    drafts.load.mockReturnValue(of(snapshot));
+    drafts.publish.mockReturnValue(of({ siteId: 'site', mapId: 'm', modelVersionId: 'v', status: 'PUBLISHED' }));
+    const fixture = create([svg]);
+    component.reviewPublication();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Confirmar publicación');
+    component.publish();
+    fixture.detectChanges();
+    expect(drafts.publish).toHaveBeenCalledWith(snapshot);
+    expect(component.publishedVersion()).toBe('v');
+    expect(component.canPublish()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.editor')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Mapa publicado');
+  });
+
+  it('keeps the draft after rejection and shows beacon observations', () => {
+    drafts.load.mockReturnValue(of(savedPublishableDraft()));
+    drafts.publish.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422,
+      error: { issues: [{ code: 'INVALID_BEACON_PLACEMENT', elementType: 'BEACON', elementId: 'beacon', message: 'Outside floor' }] } })));
+    create([svg]);
+    component.reviewPublication();
+    component.publish();
+    expect(component.publishedVersion()).toBeNull();
+    expect(component.draft()).not.toBeNull();
+    expect(component.serverAlerts()[0].code).toBe('INVALID_BEACON_PLACEMENT');
+    expect(component.canPublish()).toBe(false);
+  });
+
+  it('requires another review after a stale revision response', () => {
+    drafts.load.mockReturnValue(of(savedPublishableDraft()));
+    drafts.publish.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+    create([svg]);
+    component.reviewPublication();
+    component.publish();
+    expect(component.publicationReview()).toBe(false);
+    expect(component.publicationFailure()).toContain('El borrador cambió');
+    expect(component.publishedVersion()).toBeNull();
   });
 
   it('selects the current plan and enables generation for any stored format', () => {
