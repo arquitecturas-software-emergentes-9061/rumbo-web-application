@@ -1,0 +1,147 @@
+<app-admin-shell [context]="site()?.name ?? null">
+  <header class="page-heading">
+    <nav class="breadcrumb" aria-label="Ubicación actual">
+      <span>Analíticas</span>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Mapa de calor</span>
+    </nav>
+    <div class="heading-row">
+      <div>
+        <h1>Mapa de calor de desorientación</h1>
+        <p class="lead">Zonas donde los visitantes se desvían o deben recalcular la ruta.</p>
+      </div>
+      @if (updatedAt(); as time) {
+        <p class="synced" role="status">Actualizado a las {{ time.getHours().toString().padStart(2, '0') }}:{{ time.getMinutes().toString().padStart(2, '0') }}</p>
+      }
+    </div>
+  </header>
+
+  @if (error(); as message) {
+    <p class="alert" role="alert">{{ message }}</p>
+  }
+
+  @if (!loading() && sites().length === 0 && !error()) {
+    <section class="card empty">
+      <h2>Aún no hay sedes con un mapa publicado</h2>
+      <p>El mapa de calor se dibuja sobre el modelo oficial de la sede. Publica un mapa en el Editor de mapa para empezar.</p>
+      <a routerLink="/planning/map-editor" class="outline link-button">Ir al editor de mapa</a>
+    </section>
+  } @else {
+    <form class="filters card" (submit)="$event.preventDefault(); apply()">
+      <label class="site">Sede
+        <select [value]="siteId() ?? ''" [disabled]="sites().length < 2" (change)="selectSite($any($event.target).value)">
+          @for (item of sites(); track item.id) { <option [value]="item.id">{{ item.name }}</option> }
+        </select>
+      </label>
+      <label>Desde <input type="date" [value]="fromDate()" (change)="setFrom($any($event.target).value)" /></label>
+      <label>Hasta <input type="date" [value]="toDate()" (change)="setTo($any($event.target).value)" /></label>
+      <button type="submit" class="primary" [disabled]="loading() || !siteId()">{{ loading() ? 'Cargando…' : 'Aplicar' }}</button>
+      <span class="spacer"></span>
+      <button type="button" class="outline" [disabled]="!hasData() || !model()" (click)="exportCsv()">⤓ Exportar datos del mapa de calor</button>
+    </form>
+    @if (periodError(); as message) {
+      <p class="alert" role="alert">{{ message }}</p>
+    }
+
+    @if (noMap()) {
+      <section class="card empty">
+        <h2>{{ site()?.name }} no tiene un mapa publicado</h2>
+        <p>Publica el mapa de la sede para ubicar los desvíos sobre sus pisos.</p>
+      </section>
+    } @else if (model()) {
+      <div class="tabs" role="tablist" aria-label="Pisos">
+        @for (item of floors(); track item.id) {
+          <button type="button" role="tab" [attr.aria-selected]="item.id === floorId()" [class.active]="item.id === floorId()"
+            (click)="selectFloor(item.id)">{{ item.name }}</button>
+        }
+      </div>
+
+      <div class="layout">
+        <section class="card map-card" aria-labelledby="map-title">
+          <div class="map-header">
+            <h2 id="map-title">{{ floor()?.name ?? 'Piso' }} — {{ site()?.name }}</h2>
+            <div class="map-tools" role="group" aria-label="Controles del mapa">
+              <button type="button" class="outline" aria-label="Acercar" [disabled]="zoom() >= 3" (click)="zoomBy(0.25)">+</button>
+              <button type="button" class="outline" aria-label="Alejar" [disabled]="zoom() <= 1" (click)="zoomBy(-0.25)">−</button>
+              <button type="button" class="outline" (click)="resetView()">↺ Restablecer</button>
+            </div>
+          </div>
+          <div class="viewport">
+            @if (plan()) {
+              <svg [attr.viewBox]="viewBox()" preserveAspectRatio="xMidYMid meet" role="img"
+                [style.transform]="'scale(' + zoom() + ')'"
+                [attr.aria-label]="'Mapa de calor de ' + (floor()?.name ?? 'el piso') + ' con ' + cells().length + ' zonas con desvíos'">
+                <rect class="plan" x="0" y="0" [attr.width]="plan()!.widthUnits" [attr.height]="plan()!.heightUnits" />
+                @for (wall of walls(); track $index) {
+                  <line class="wall" [attr.x1]="wall.x1" [attr.y1]="wall.y1" [attr.x2]="wall.x2" [attr.y2]="wall.y2"
+                    [attr.stroke-width]="unit() * 0.6" />
+                }
+                @for (node of floorNodes(); track node.id) {
+                  <circle class="node" [attr.cx]="node.x" [attr.cy]="node.y" [attr.r]="unit() * 0.8" />
+                }
+                @for (cell of cells(); track cell.nodeReference) {
+                  <circle class="heat" [class]="'heat ' + cell.level" [attr.cx]="cell.x" [attr.cy]="cell.y"
+                    [attr.r]="unit() * (cell.level === 'high' ? 7 : cell.level === 'medium' ? 5.5 : 4)" />
+                  @if (highlighted() === cell.nodeReference) {
+                    <circle class="focus" [attr.cx]="cell.x" [attr.cy]="cell.y" [attr.r]="unit() * 9" [attr.stroke-width]="unit() * 0.6" />
+                  }
+                  <g class="tag" [class.strong]="cell.level === 'high'">
+                    <rect [attr.x]="cell.x - unit() * 7" [attr.y]="cell.y - unit() * 12" [attr.width]="unit() * 14" [attr.height]="unit() * 4.2"
+                      [attr.rx]="unit() * 0.8" />
+                    <text [attr.x]="cell.x" [attr.y]="cell.y - unit() * 9.1" [attr.font-size]="unit() * 2.6" text-anchor="middle">
+                      {{ count(cell.deviations, 'desvío', 'desvíos') }}
+                    </text>
+                  </g>
+                }
+              </svg>
+            } @else {
+              <p class="hint">Este piso no tiene un plano en el modelo publicado.</p>
+            }
+          </div>
+          @if (!loading() && !floorHasData()) {
+            <p class="notice" role="status">No hay desvíos ni recálculos registrados en este piso para el periodo elegido.</p>
+          }
+          @if (placement().unplaced > 0 || (heatmap()?.discardedEvents ?? 0) > 0) {
+            <p class="hint">
+              @if (placement().unplaced > 0) { {{ count(placement().unplaced, 'zona no aparece', 'zonas no aparecen') }} porque su nodo ya no está en el mapa publicado. }
+              @if ((heatmap()?.discardedEvents ?? 0) > 0) { {{ count(heatmap()!.discardedEvents, 'evento llegó', 'eventos llegaron') }} sin piso o nodo y no se pueden ubicar. }
+            </p>
+          }
+          <div class="legend">
+            <strong>Leyenda:</strong>
+            <ul>
+              @for (item of legend; track item.level) {
+                <li><span class="swatch" [class]="'swatch ' + item.level"></span>{{ item.label }}</li>
+              }
+              <li><span class="swatch node-swatch"></span>Nodo del mapa</li>
+            </ul>
+          </div>
+        </section>
+
+        <aside class="card problems" aria-labelledby="problems-title">
+          <h2 id="problems-title">Rutas problemáticas <span class="pill">{{ problems().length }} {{ problems().length === 1 ? 'activa' : 'activas' }}</span></h2>
+          <p class="hint">Zonas con más desvíos y recálculos en {{ floor()?.name ?? 'este piso' }}.</p>
+          @if (problems().length === 0) {
+            <p class="hint">Sin zonas problemáticas en este periodo.</p>
+          } @else {
+            <ul class="spots">
+              @for (spot of problems(); track spot.nodeReference) {
+                <li [class.active]="highlighted() === spot.nodeReference">
+                  <div class="spot-head">
+                    <strong>{{ spot.label }}</strong>
+                    <span class="badge">{{ spot.recalculationShare }}% de recálculo</span>
+                  </div>
+                  <p>{{ count(spot.incidents, 'incidencia', 'incidencias') }} · {{ count(spot.deviations, 'desvío', 'desvíos') }} y {{ count(spot.recalculations, 'recálculo', 'recálculos') }}</p>
+                  <button type="button" class="outline" [attr.aria-pressed]="highlighted() === spot.nodeReference" (click)="show(spot.nodeReference)">◎ Ver en el mapa</button>
+                </li>
+              }
+            </ul>
+          }
+          <p class="tip">💡 Consejo: agrega una baliza intermedia o revisa los muros en el editor de mapa donde se concentran los desvíos.</p>
+        </aside>
+      </div>
+    } @else if (loading()) {
+      <p role="status">Cargando el mapa de calor…</p>
+    }
+  }
+</app-admin-shell>

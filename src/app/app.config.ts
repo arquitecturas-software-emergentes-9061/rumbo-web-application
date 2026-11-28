@@ -2,6 +2,8 @@ import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { routes } from './app.routes';
+import { ANALYTICS_PORT } from './analytics/application/analytics.ports';
+import { AnalyticsService } from './analytics/infrastructure/analytics.service';
 import { authInterceptor } from './iam/infrastructure/interceptors/auth.interceptor';
 import { subscriptionRestrictionInterceptor } from './subscriptions/infrastructure/interceptors/subscription-restriction.interceptor';
 import { AUTH_GATEWAY_PORT, AUTH_PORT, AUTH_STORAGE_PORT, PASSWORD_RECOVERY_PORT } from './iam/application/iam.ports';
@@ -34,6 +36,7 @@ export const appConfig: ApplicationConfig = {
     { provide: DRAFT_GRAPH_PORT, useExisting: DraftGraphService },
     { provide: MAP_EDITOR_PORT, useExisting: MapEditorApiService },
     { provide: SUBSCRIPTIONS_PORT, useExisting: SubscriptionsService },
-    { provide: BROWSER_NAVIGATION, useExisting: BrowserNavigationService }
+    { provide: BROWSER_NAVIGATION, useExisting: BrowserNavigationService },
+    { provide: ANALYTICS_PORT, useExisting: AnalyticsService }
   ],
 };
