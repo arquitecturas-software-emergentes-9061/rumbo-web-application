@@ -90,6 +90,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'analytics/heatmap',
+    loadComponent: () => import('./analytics/presentation/pages/disorientation-heatmap/disorientation-heatmap.component')
+      .then(module => module.DisorientationHeatmapComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: '**',
     redirectTo: 'admin'
   }

@@ -12,7 +12,7 @@ function walk(directory) {
   });
 }
 
-for (const context of ['iam', 'planning']) {
+for (const context of ['iam', 'planning', 'analytics']) {
   for (const layer of layers) {
     if (!existsSync(join(app, context, layer))) violations.push(`${context}/${layer} is missing`);
   }
@@ -26,7 +26,7 @@ for (const legacy of ['core', 'features']) {
 for (const file of walk(app).filter(path => path.endsWith('.ts') && !path.endsWith('.spec.ts'))) {
   const parts = relative(app, file).split(sep);
   const [context, layer] = parts;
-  if (!['iam', 'planning'].includes(context) || !layers.has(layer)) continue;
+  if (!['iam', 'planning', 'analytics'].includes(context) || !layers.has(layer)) continue;
   const source = readFileSync(file, 'utf8');
   const imports = source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]/g);
   for (const [, specifier] of imports) {
